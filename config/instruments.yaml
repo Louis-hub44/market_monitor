@@ -88,29 +88,49 @@ instruments:
   SXTP:  {name: Voyages & loisirs, class: equity, group: Secteurs Stoxx 600,
           tickers: {bloomberg: SXTP Index, free: {ticker: EXV9.DE, proxy: ETF iShares Stoxx 600 Travel & Leisure}}}
   SX86P: {name: Immobilier, class: equity, group: Secteurs Stoxx 600,
-          tickers: {bloomberg: SX86P Index}}
+          tickers: {bloomberg: SX86P Index, free: {ticker: EXI5.DE, proxy: ETF iShares Stoxx 600 Real Estate}}}
 
   # -------------------------------------------------------------------- taux
-  # Génériques Bloomberg (rendements en %). Pas de source gratuite quotidienne fiable
-  # pour les courbes souveraines pays : Bloomberg only.
-  BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne, tickers: {bloomberg: GDBR2 Index}}
-  BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne, tickers: {bloomberg: GDBR5 Index}}
-  BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne, tickers: {bloomberg: GDBR10 Index}}
-  BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne, tickers: {bloomberg: GDBR30 Index}}
-  OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France, tickers: {bloomberg: GFRN2 Index}}
-  OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France, tickers: {bloomberg: GFRN5 Index}}
-  OAT_10Y:   {name: OAT 10 ans,  class: rates, group: France, tickers: {bloomberg: GFRN10 Index}}
-  OAT_30Y:   {name: OAT 30 ans,  class: rates, group: France, tickers: {bloomberg: GFRN30 Index}}
-  BTP_2Y:    {name: BTP 2 ans,   class: rates, group: Italie, tickers: {bloomberg: GBTPGR2 Index}}
-  BTP_5Y:    {name: BTP 5 ans,   class: rates, group: Italie, tickers: {bloomberg: GBTPGR5 Index}}
-  BTP_10Y:   {name: BTP 10 ans,  class: rates, group: Italie, tickers: {bloomberg: GBTPGR10 Index}}
-  BTP_30Y:   {name: BTP 30 ans,  class: rates, group: Italie, tickers: {bloomberg: GBTPGR30 Index}}
-  BONOS_2Y:  {name: Bonos 2 ans,  class: rates, group: Espagne, tickers: {bloomberg: GSPG2YR Index}}
-  BONOS_5Y:  {name: Bonos 5 ans,  class: rates, group: Espagne, tickers: {bloomberg: GSPG5YR Index}}
-  BONOS_10Y: {name: Bonos 10 ans, class: rates, group: Espagne, tickers: {bloomberg: GSPG10YR Index}}
-  BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne, tickers: {bloomberg: GSPG30YR Index}}
-  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,
-              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2}}
+  # Génériques Bloomberg (rendements en %). Fallback gratuit : rendements génériques Stooq
+  # (stooq:<maturité><pays>y.b, en %, à vérifier), une seule source pour les quatre pays afin
+  # que les spreads restent cohérents. Si Stooq est inaccessible, le Bund peut passer sur la
+  # courbe officielle de la Bundesbank (zéro-coupon Svensson, quelques pb d'écart) :
+  #   free: {ticker: "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A",
+  #          proxy: Courbe zéro-coupon Bundesbank}      (R02XX, R05XX, R10XX, R30XX)
+  BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne,
+              tickers: {bloomberg: GDBR2 Index, free: "stooq:2dey.b"}}
+  BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne,
+              tickers: {bloomberg: GDBR5 Index, free: "stooq:5dey.b"}}
+  BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne,
+              tickers: {bloomberg: GDBR10 Index, free: "stooq:10dey.b"}}
+  BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne,
+              tickers: {bloomberg: GDBR30 Index, free: "stooq:30dey.b"}}
+  OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France,
+              tickers: {bloomberg: GFRN2 Index, free: "stooq:2fry.b"}}
+  OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France,
+              tickers: {bloomberg: GFRN5 Index, free: "stooq:5fry.b"}}
+  OAT_10Y:   {name: OAT 10 ans,  class: rates, group: France,
+              tickers: {bloomberg: GFRN10 Index, free: "stooq:10fry.b"}}
+  OAT_30Y:   {name: OAT 30 ans,  class: rates, group: France,
+              tickers: {bloomberg: GFRN30 Index, free: "stooq:30fry.b"}}
+  BTP_2Y:    {name: BTP 2 ans,   class: rates, group: Italie,
+              tickers: {bloomberg: GBTPGR2 Index, free: "stooq:2ity.b"}}
+  BTP_5Y:    {name: BTP 5 ans,   class: rates, group: Italie,
+              tickers: {bloomberg: GBTPGR5 Index, free: "stooq:5ity.b"}}
+  BTP_10Y:   {name: BTP 10 ans,  class: rates, group: Italie,
+              tickers: {bloomberg: GBTPGR10 Index, free: "stooq:10ity.b"}}
+  BTP_30Y:   {name: BTP 30 ans,  class: rates, group: Italie,
+              tickers: {bloomberg: GBTPGR30 Index, free: "stooq:30ity.b"}}
+  BONOS_2Y:  {name: Bonos 2 ans,  class: rates, group: Espagne,
+              tickers: {bloomberg: GSPG2YR Index, free: "stooq:2esy.b"}}
+  BONOS_5Y:  {name: Bonos 5 ans,  class: rates, group: Espagne,
+              tickers: {bloomberg: GSPG5YR Index, free: "stooq:5esy.b"}}
+  BONOS_10Y: {name: Bonos 10 ans, class: rates, group: Espagne,
+              tickers: {bloomberg: GSPG10YR Index, free: "stooq:10esy.b"}}
+  BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne,
+              tickers: {bloomberg: GSPG30YR Index, free: "stooq:30esy.b"}}
+  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,          # FRED : J-1
+              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2, free: "fred:DGS2"}}
   UST_5Y:    {name: UST 5 ans,  class: rates, group: États-Unis,
               tickers: {bloomberg: USGG5YR Index, fmp: treasury:year5, free: ^FVX}}
   UST_10Y:   {name: UST 10 ans, class: rates, group: États-Unis,
@@ -137,6 +157,8 @@ instruments:
                  derived: {multiplier: 100, legs: {UST_30Y: 1, UST_5Y: -1}}}
 
   # ------------------------------------------------------------------- crédit
+  # Pas de source gratuite quotidienne pour les indices iTraxx (données Markit sous licence) :
+  # Bloomberg uniquement.
   ITRX_MAIN:  {name: iTraxx Europe Main 5Y, class: credit, group: iTraxx 5 ans,
                tickers: {bloomberg: ITRXEBE CBIN Curncy}}
   ITRX_XOVER: {name: iTraxx Crossover 5Y, class: credit, group: iTraxx 5 ans,
@@ -173,7 +195,7 @@ instruments:
   VIX:  {name: VIX, class: volatility, group: Volatilité implicite,
          tickers: {bloomberg: VIX Index, fmp: ^VIX, free: ^VIX}}
   V2X:  {name: VSTOXX, class: volatility, group: Volatilité implicite,
-         tickers: {bloomberg: V2X Index, free: ^V2TX}}
+         tickers: {bloomberg: V2X Index, free: "stoxx:v2tx"}}   # fichier historique STOXX, à vérifier
   MOVE: {name: MOVE, class: volatility, group: Volatilité implicite,
          tickers: {bloomberg: MOVE Index, free: ^MOVE}}
 

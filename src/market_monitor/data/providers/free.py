@@ -1,8 +1,10 @@
-"""Free fallback provider: ECB Data Portal (rates, €STR, FX fixings) + Yahoo Finance.
+"""Free fallback provider: ECB Data Portal, keyless public sources + Yahoo Finance.
 
 Native tickers (prefix routes to the source, no prefix = Yahoo):
     * ``ecb:<flow>/<key>``  e.g. ``ecb:EST/B.EU000A2X2A25.WT`` (€STR),
       ``ecb:YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y`` (AAA euro curve, 10Y spot);
+    * ``stooq:``, ``bbk:``, ``fred:``, ``stoxx:`` - see :mod:`.public` (sovereign yields,
+      Bundesbank curve, FRED, VSTOXX);
     * ``yf:<symbol>`` or ``<symbol>``  e.g. ``^STOXX50E``, ``EURUSD=X``, ``BZ=F``, ``^VIX``.
 """
 
@@ -10,10 +12,10 @@ from __future__ import annotations
 
 import io
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from functools import partial
-from typing import Any
+from typing import Any, Protocol
 
 import pandas as pd
 import requests
@@ -21,6 +23,7 @@ import requests
 from market_monitor.data.base import DataProvider
 from market_monitor.data.models import Field, HistoryRequest, HistoryResult
 from market_monitor.data.providers._http import get_with_retry
+from market_monitor.data.providers.public import BundesbankClient, FredClient, StooqClient, StoxxClient
 from market_monitor.data.quality import assemble_frame, clean_series
 from market_monitor.exceptions import DataProviderError, ProviderUnavailableError
 from market_monitor.network import apply_to_yfinance
@@ -36,6 +39,12 @@ _YF_FIELDS = {
 }
 
 Downloader = Callable[[Sequence[str], date, date], pd.DataFrame]
+
+
+class SeriesClient(Protocol):
+    """One series per call (ECB, Stooq, Bundesbank, FRED, STOXX): LAST field only."""
+
+    def fetch(self, key: str, start: date, end: date) -> pd.Series: ...
 
 
 class ECBClient:
@@ -162,27 +171,39 @@ def extract_yahoo_field(
 
 
 class FreeProvider(DataProvider):
-    """Routes each ticker to the ECB or Yahoo according to its prefix."""
+    """Routes each ticker to a series source or to Yahoo according to its prefix."""
 
     name = "free"
 
-    def __init__(self, ecb: ECBClient | None = None, yahoo: YahooClient | None = None) -> None:
-        self._ecb = ecb or ECBClient()
+    def __init__(
+        self,
+        ecb: ECBClient | None = None,
+        yahoo: YahooClient | None = None,
+        *,
+        sources: Mapping[str, SeriesClient] | None = None,
+    ) -> None:
+        """``sources`` maps a prefix (``"stooq:"``...) to its client; defaults to the public ones."""
         self._yahoo = yahoo or YahooClient()
+        self._sources: dict[str, SeriesClient] = dict(
+            sources if sources is not None else default_sources())
+        self._sources[ECB_PREFIX] = ecb or ECBClient()
 
     def _fetch_history(self, request: HistoryRequest) -> HistoryResult:
         series: dict[str, pd.Series] = {}
         errors: dict[str, str] = {}
-        ecb = [t for t in request.tickers if t.startswith(ECB_PREFIX)]
-        yahoo = {t: t.removeprefix(YAHOO_PREFIX) for t in request.tickers if t not in ecb}
-        for ticker in ecb:
-            if request.field is not Field.LAST:
-                errors[ticker] = "ECB series only support the LAST field"
-                continue
-            try:
-                series[ticker] = self._ecb.fetch(ticker[len(ECB_PREFIX):], request.start, request.end)
-            except DataProviderError as exc:  # incl. ECB down: Yahoo tickers still served
-                errors[ticker] = str(exc)
+        yahoo: dict[str, str] = {}
+        for ticker in request.tickers:
+            prefix = next((p for p in self._sources if ticker.startswith(p)), None)
+            if prefix is None:
+                yahoo[ticker] = ticker.removeprefix(YAHOO_PREFIX)
+            elif request.field is not Field.LAST:
+                errors[ticker] = f"{prefix.rstrip(':').upper()} series only support the LAST field"
+            else:
+                try:
+                    series[ticker] = self._sources[prefix].fetch(ticker[len(prefix):],
+                                                                 request.start, request.end)
+                except DataProviderError as exc:  # one source down: the others still served
+                    errors[ticker] = str(exc)
         if yahoo:
             self._fetch_yahoo(yahoo, request, series, errors)
         return HistoryResult(data=assemble_frame(series, request.tickers), errors=errors)
@@ -203,3 +224,16 @@ class FreeProvider(DataProvider):
         for ticker, symbol in mapping.items():
             if symbol in fetched:
                 series[ticker] = fetched[symbol]
+
+
+def default_sources(
+    *, timeout_s: float = 20.0, session: requests.Session | None = None
+) -> dict[str, SeriesClient]:
+    """Keyless public sources, sharing the corporate SSL policy through ``session``."""
+    kwargs: dict[str, Any] = {"timeout_s": timeout_s, "session": session}
+    return {
+        "stooq:": StooqClient(**kwargs),
+        "bbk:": BundesbankClient(**kwargs),
+        "fred:": FredClient(**kwargs),
+        "stoxx:": StoxxClient(**kwargs),
+    }

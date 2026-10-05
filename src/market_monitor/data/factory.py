@@ -18,6 +18,7 @@ from market_monitor.data.providers import (
     FreeProvider,
     YahooClient,
 )
+from market_monitor.data.providers.free import default_sources
 from market_monitor.data.service import MarketDataService
 from market_monitor.exceptions import ConfigError
 from market_monitor.network import build_session, configure_session
@@ -47,9 +48,11 @@ def build_provider(name: str, settings: Settings) -> DataProvider:
     if name == "free":
         free = settings.free
         net = settings.network
+        session = rest_session(settings)
         return FreeProvider(
-            ECBClient(free.ecb_base_url, timeout_s=free.timeout_s, session=rest_session(settings)),
+            ECBClient(free.ecb_base_url, timeout_s=free.timeout_s, session=session),
             YahooClient(session=build_session(net.insecure_ssl, net.ca_bundle)),
+            sources=default_sources(timeout_s=free.timeout_s, session=session),
         )
     raise ConfigError(f"unknown provider {name!r}")
 

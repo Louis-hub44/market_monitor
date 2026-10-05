@@ -35,7 +35,7 @@ MODE_HELP = {
     "standard": "Vérification SSL normale. À utiliser hors du réseau de l'entreprise.",
     "ca": "Vérification SSL active, en reconnaissant le certificat racine du proxy (fichier .pem "
           "ou .crt fourni par l'informatique). Solution la plus sûre.",
-    "insecure": "Vérification SSL désactivée pour FMP, la BCE et Yahoo. Uniquement sur le réseau "
+    "insecure": "Vérification SSL désactivée pour toutes les sources de données. Uniquement sur le réseau "
                 "de confiance de l'entreprise, jamais sur un Wi-Fi public.",
 }
 KIND_LABELS = {"ok": "OK", "ssl": "Certificat", "proxy": "Proxy", "timeout": "Délai",
@@ -150,7 +150,7 @@ def _bundle_ok(network: NetworkSettings) -> bool:
 
 def _render_diagnostic(network: NetworkSettings) -> None:
     session = configure_session(requests.Session(), network.insecure_ssl, network.ca_bundle)
-    with st.spinner("Test de FMP, de la BCE et de Yahoo…"):
+    with st.spinner("Test de FMP, BCE, Yahoo, Stooq et FRED…"):
         try:
             diag = check_connectivity(session, timeout=8)
         finally:

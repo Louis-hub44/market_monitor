@@ -180,10 +180,18 @@ la section `network` (usage à la maison).
 | `fmp` | taux US (par yield, %) | `treasury:year2`, `treasury:year10`, `treasury:year30` |
 | `free` | Yahoo (préfixe optionnel `yf:`) | `^STOXX50E`, `EURUSD=X`, `BZ=F`, `^VIX`, `BTC-USD` |
 | `free` | ECB SDMX `ecb:FLOW/KEY` | `ecb:EST/B.EU000A2X2A25.WT` (€STR) |
+| `free` | Stooq `stooq:SYMBOLE` (rendements souverains en %) | `stooq:10dey.b` (Bund 10 ans), `stooq:2fry.b`, `stooq:10ity.b`, `stooq:30esy.b` |
+| `free` | Bundesbank SDMX `bbk:FLOW/KEY` | `bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A` (zéro-coupon 10 ans) |
+| `free` | FRED `fred:SERIE` | `fred:DGS2` (UST 2 ans, publié à J-1) |
+| `free` | STOXX `stoxx:SYMBOLE` (fichier historique) | `stoxx:v2tx` (VSTOXX) |
 
-Limites connues du fallback gratuit : pas de courbes souveraines pays quotidiennes
-(Bund/OAT/BTP/Bonos), ni iTraxx, ni MOVE fiable. Bloomberg reste la référence pour ces
-lignes ; le référentiel ne leur donne que le ticker Bloomberg.
+Sans Bloomberg, le fallback gratuit couvre les courbes Bund / OAT / BTP / Bonos (Stooq, une
+seule source pour que les spreads restent cohérents ; la courbe Bundesbank est indiquée en
+commentaire dans `instruments.yaml` en secours pour le Bund), l'UST 2 ans (FRED), le VSTOXX
+(STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Ces sources n'ont pas de
+clé ni de garantie de service : `market-monitor fetch --provider free --tickers stooq:10fry.b
+--no-cache` vérifie un ticker en une commande. Restent sans source gratuite : les indices
+iTraxx (données Markit sous licence), Bloomberg uniquement.
 
 Un provider indisponible (pas de `blpapi`, pas de clé FMP) est ignoré au démarrage ; un
 provider qui tombe en cours de route (Terminal fermé, quota FMP) déclenche le fallback

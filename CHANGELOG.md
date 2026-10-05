@@ -1,5 +1,13 @@
 # Historique des versions
 
+## 1.2.0 — sources gratuites pour les taux
+- Nouvelles sources sans clé dans le provider `free` : Stooq (`stooq:`), Bundesbank
+  (`bbk:`), FRED (`fred:`), STOXX (`stoxx:`), avec la même politique SSL que les autres.
+- Référentiel : rendements Bund / OAT / BTP / Bonos 2-5-10-30 ans via Stooq (spreads et
+  pentes de nouveau calculés sans Bloomberg), UST 2 ans via FRED, VSTOXX via STOXX,
+  immobilier Stoxx 600 via l'ETF iShares (proxy).
+- *Tester la connexion* sonde aussi Stooq et FRED.
+
 ## 1.1.0 — connexion réseau et interface
 - Écran *Connexion réseau* au lancement du dashboard : aucune donnée n'est chargée avant
   *Lancer le chargement* ; modes standard / certificat d'entreprise / contournement SSL,

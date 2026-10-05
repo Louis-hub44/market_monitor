@@ -57,7 +57,7 @@ def test_factory_applies_policy_to_every_source(tmp_path):
                                                               "FMP_API_KEY": "k"})
     assert rest_session(settings).verify is False
     free = build_provider("free", settings)
-    assert free._ecb._session.verify is False
+    assert free._sources["ecb:"]._session.verify is False
     assert build_provider("fmp", settings)._session.verify is False
     assert rest_session(settings_from_dict({}, base_dir=tmp_path, env={})) is None
 

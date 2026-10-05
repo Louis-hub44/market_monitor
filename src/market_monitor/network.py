@@ -56,6 +56,8 @@ PROBES: dict[str, str] = {
     "FMP": "https://financialmodelingprep.com/stable/profile?symbol=AAPL",
     "ECB": "https://data-api.ecb.europa.eu/service/dataflow/ECB/EST",
     "YAHOO": "https://query2.finance.yahoo.com/v1/test/getcrumb",
+    "STOOQ": "https://stooq.com/q/d/l/?s=10dey.b&i=d",
+    "FRED": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2",
 }
 
 #: Fragments that unambiguously identify a certificate-validation failure.
