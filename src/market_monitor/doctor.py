@@ -10,9 +10,10 @@ from datetime import date, timedelta
 
 from market_monitor.alerts import load_rules
 from market_monitor.config import Settings
-from market_monitor.data.factory import build_provider
+from market_monitor.data.factory import build_provider, rest_session
 from market_monitor.exceptions import MarketMonitorError
 from market_monitor.export import load_layout
+from market_monitor.network import SSL_HINT, check_connectivity, describe, looks_like_ssl_error, proxy_env
 from market_monitor.referential import Referential, load_referential
 
 #: one ticker per provider for the online probe
@@ -36,6 +37,9 @@ def run_checks(settings: Settings, *, online: bool = False) -> list[Check]:
         _attempt(checks, "Daily macro", lambda: _layout(settings, referential))
         _attempt(checks, "Alertes", lambda: _rules(settings, referential))
     _attempt(checks, "Cache", lambda: _cache(settings))
+    checks.append(_network(settings))
+    if online and {"fmp", "free"} & set(settings.priority):
+        checks.append(_connectivity(settings))
     for name in settings.priority:
         checks.append(_provider(settings, name, online))
     return checks
@@ -75,6 +79,21 @@ def _cache(settings: Settings) -> tuple[object, str]:
     return None, f"accessible en écriture ({settings.cache.directory})"
 
 
+def _network(settings: Settings) -> Check:
+    net = settings.network
+    detail = describe(net.insecure_ssl, net.ca_bundle)
+    proxies = proxy_env()
+    if proxies:
+        detail += f" ; proxy : {', '.join(sorted(proxies))}"
+    return Check("Réseau", net.ca_bundle is None or net.ca_bundle.is_file(), detail)
+
+
+def _connectivity(settings: Settings) -> Check:
+    diag = check_connectivity(rest_session(settings))
+    detail = diag["message"] + (f" -> {diag['hint']}" if diag["hint"] else "")
+    return Check("Connectivité", diag["kind"] == "ok", detail)
+
+
 def _provider(settings: Settings, name: str, online: bool) -> Check:
     label = f"Provider {name}"
     provider = build_provider(name, settings)
@@ -88,8 +107,12 @@ def _provider(settings: Settings, name: str, online: bool) -> Check:
     try:
         result = provider.get_history(PROBES[name], end - timedelta(days=PROBE_DAYS), end)
     except MarketMonitorError as exc:
-        return Check(label, False, f"échec en ligne : {exc}")
+        return Check(label, False, _with_ssl_hint(f"échec en ligne : {exc}"))
     if result.errors:
-        return Check(label, False, f"{PROBES[name]} : {next(iter(result.errors.values()))}")
+        return Check(label, False, _with_ssl_hint(f"{PROBES[name]} : {next(iter(result.errors.values()))}"))
     last = result.data[PROBES[name]].dropna()
     return Check(label, True, f"{PROBES[name]} = {last.iloc[-1]:g} au {last.index[-1]:%d/%m}")
+
+
+def _with_ssl_hint(detail: str) -> str:
+    return f"{detail} -> {SSL_HINT}" if looks_like_ssl_error(detail) else detail

@@ -131,12 +131,33 @@ Dashboard / CLI / tâche planifiée
 | `.env` | `FMP_API_KEY` |
 | `MARKET_MONITOR_PROVIDERS` | surcharge de l'ordre des providers, ex. `fmp,free` |
 | `MARKET_MONITOR_CONFIG` | chemin d'un autre `config.yaml` |
+| `MARKET_MONITOR_CA_BUNDLE` | certificat racine du proxy d'entreprise (PEM) ; `REQUESTS_CA_BUNDLE` et `SSL_CERT_FILE` sont aussi reconnus |
+| `MARKET_MONITOR_INSECURE_SSL` | `1` : vérification SSL désactivée (dépannage, réseau de confiance uniquement) |
 
 Priorité : variables d'environnement > `.env` > `config.yaml` > valeurs par défaut. Les
 chemins relatifs sont résolus par rapport au fichier `config.yaml`. Toute valeur invalide
 (provider inconnu, fuseau inexistant, seuil négatif…) est refusée au chargement avec un
 message qui nomme la clé fautive. `tzdata` est une dépendance : sans elle, `zoneinfo` ne
 connaît pas `Europe/Paris` sous Windows.
+
+### Proxy d'entreprise (inspection SSL)
+
+Derrière Zscaler, Netskope, Fortinet…, le proxy re-signe le trafic HTTPS et toutes les
+sources échouent ensemble sur `certificate verify failed` : le dashboard ne sert plus que le
+cache. Yahoo est le cas le plus fréquent, car `yfinance` passe par `curl_cffi`, qui ignore
+`REQUESTS_CA_BUNDLE`. Section `network` de `config.yaml` (ou variables ci-dessus) :
+
+1. `ca_bundle: C:\ProgramData\Zscaler\ZscalerRootCertificate.pem` — **solution à
+   privilégier** : la vérification reste active et reconnaît le proxy (fichier à demander à
+   l'informatique) ;
+2. `insecure_ssl: true` — vérification désactivée, en dépannage et sur un réseau de confiance
+   uniquement ; ignoré si `ca_bundle` est valide.
+
+Dès que l'un des deux est renseigné, FMP, la BCE et Yahoo utilisent une session `requests`
+configurée (`src/market_monitor/network.py`) ; yfinance perd alors son empreinte TLS
+« navigateur », compensée par un `User-Agent` Chrome. Sans réglage, rien ne change.
+`market-monitor doctor --online` affiche la configuration réseau, sonde FMP, BCE et Yahoo et
+désigne le proxy quand toutes les sources échouent sur le certificat.
 
 ## 5. Données
 
@@ -544,6 +565,7 @@ pytest --cov=market_monitor              # 204 tests, ~25 s, 94 % de couverture
 | Avertissement « implausible level » | unité de la source différente du référentiel : ajuster `scale` du ticker |
 | Ligne en italique grisé | dernière cotation de plus de 2 jours ouvrés : jour férié local, ticker à vérifier |
 | Saut sur Brent, WTI, cuivre | roll du contrat générique front-month |
+| « certificate verify failed » / « self signed certificate » sur toutes les sources | proxy d'inspection SSL : `network.ca_bundle` (ou, réseau de confiance, `insecure_ssl`), § 4 |
 | Erreur `zoneinfo` sous Windows | `pip install tzdata` |
 | Thème du dashboard absent | lancer via `market-monitor ui` ou depuis la racine du projet |
 | Donnée manifestement fausse après une correction | `market-monitor cache-clear --provider …` |

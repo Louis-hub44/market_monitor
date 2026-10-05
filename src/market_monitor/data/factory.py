@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+import requests
+
 from market_monitor.config import Settings
 from market_monitor.data.base import DataProvider
 from market_monitor.data.cache import ParquetCache
@@ -18,8 +20,17 @@ from market_monitor.data.providers import (
 )
 from market_monitor.data.service import MarketDataService
 from market_monitor.exceptions import ConfigError
+from market_monitor.network import build_session, configure_session
 
 logger = logging.getLogger(__name__)
+
+
+def rest_session(settings: Settings) -> requests.Session | None:
+    """``requests`` session carrying the corporate SSL policy, ``None`` when not customised."""
+    net = settings.network
+    if not net.customised:
+        return None
+    return configure_session(requests.Session(), net.insecure_ssl, net.ca_bundle)
 
 
 def build_provider(name: str, settings: Settings) -> DataProvider:
@@ -30,11 +41,16 @@ def build_provider(name: str, settings: Settings) -> DataProvider:
     if name == "fmp":
         fmp = settings.fmp
         return FMPProvider(
-            fmp.api_key, base_url=fmp.base_url, timeout_s=fmp.timeout_s, max_retries=fmp.max_retries
+            fmp.api_key, base_url=fmp.base_url, timeout_s=fmp.timeout_s, max_retries=fmp.max_retries,
+            session=rest_session(settings),
         )
     if name == "free":
         free = settings.free
-        return FreeProvider(ECBClient(free.ecb_base_url, timeout_s=free.timeout_s), YahooClient())
+        net = settings.network
+        return FreeProvider(
+            ECBClient(free.ecb_base_url, timeout_s=free.timeout_s, session=rest_session(settings)),
+            YahooClient(session=build_session(net.insecure_ssl, net.ca_bundle)),
+        )
     raise ConfigError(f"unknown provider {name!r}")
 
 

@@ -1,5 +1,13 @@
 # Historique des versions
 
+## Non publié
+- Contournement des proxys d'inspection SSL d'entreprise (`market_monitor.network`) : section
+  `network` de `config.yaml` (`ca_bundle`, `insecure_ssl`) et variables
+  `MARKET_MONITOR_CA_BUNDLE` / `MARKET_MONITOR_INSECURE_SSL`, appliquées à FMP, à la BCE et à
+  Yahoo (session `requests` imposée à yfinance à la place de `curl_cffi`).
+- `doctor` : ligne « Réseau » (configuration, variables de proxy) et, avec `--online`, sonde de
+  connectivité qui qualifie la panne (certificat, proxy, DNS, délai, filtrage).
+
 ## 1.0.0 — phase 7 : tests, documentation, finitions
 - `market-monitor doctor [--online]` : diagnostic de l'installation (fichiers, cache, providers).
 - Journal tournant `logs/market_monitor.log` (1 Mo × 5), idempotent sous Streamlit.
