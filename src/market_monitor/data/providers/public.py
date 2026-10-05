@@ -7,7 +7,9 @@ Native tickers (the prefix routes to the source, see :class:`FreeProvider`):
       zero-coupon curve of listed Federal securities
       ``bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A`` (10Y);
     * ``fred:<series>`` - St. Louis Fed FRED, e.g. ``fred:DGS2`` (UST 2Y constant maturity);
-    * ``stoxx:<symbol>`` - STOXX historical index file, e.g. ``stoxx:v2tx`` (VSTOXX).
+    * ``stoxx:<symbol>`` - STOXX historical index file, e.g. ``stoxx:v2tx`` (VSTOXX);
+    * ``cnbc:<symbol>`` - CNBC daily bars (unofficial endpoint), sovereign yields in % such
+      as ``cnbc:DE10Y-DE``, ``cnbc:FR2Y-FR``, ``cnbc:IT30Y-IT``, ``cnbc:ES5Y-ES``.
 
 Each client returns one cleaned :class:`pandas.Series` (date -> value) for ``[start, end]``.
 """
@@ -16,18 +18,20 @@ from __future__ import annotations
 
 import io
 from datetime import date
+from typing import Any
 
 import pandas as pd
 import requests
 
 from market_monitor.data.providers._http import get_with_retry
 from market_monitor.data.quality import clean_series
-from market_monitor.exceptions import DataProviderError
+from market_monitor.exceptions import DataProviderError, ProviderUnavailableError
 
 STOOQ_URL = "https://stooq.com/q/d/l/"
 BUNDESBANK_URL = "https://api.statistiken.bundesbank.de/rest/data"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 STOXX_URL = "https://www.stoxx.com/document/Indices/Current/HistoricalData"
+CNBC_URL = "https://ts-api.cnbc.com/harmony/app/bars"
 SDMX_CSV = "application/vnd.sdmx.data+csv;version=1.0.0"
 
 
@@ -89,6 +93,10 @@ def parse_stooq_csv(text: str, symbol: str = "") -> pd.Series:
     body = text.strip()
     if not body or body.lower().startswith("no data"):
         return clean_series(None)
+    if body.lstrip().startswith("<"):
+        # anti-bot / JavaScript challenge page: the whole source is unusable, not this symbol,
+        # so the circuit breaker skips the remaining Stooq tickers
+        raise ProviderUnavailableError("Stooq unreachable (anti-bot page requiring JavaScript)")
     if not body.lower().startswith("date"):
         raise DataProviderError(f"Stooq refused {symbol}: {body.splitlines()[0][:120]}")
     frame = pd.read_csv(io.StringIO(body))
@@ -177,3 +185,53 @@ def parse_stoxx_txt(text: str, symbol: str = "") -> pd.Series:
     dates = pd.to_datetime(frame["Date"].astype(str).str.strip(), format="%d.%m.%Y", errors="coerce")
     values = pd.to_numeric(frame.iloc[:, -1], errors="coerce")
     return clean_series(pd.Series(values.to_numpy(), index=dates))
+
+
+# ----------------------------------------------------------------------- CNBC
+class CnbcClient(_CsvClient):
+    """CNBC chart service, daily bars (JSON) - unofficial, used as a fallback only."""
+
+    source = "CNBC"
+    default_url = CNBC_URL
+
+    def fetch(self, symbol: str, start: date, end: date) -> pd.Series:
+        url = (f"{self._base_url}/{symbol}/1D/{start:%Y%m%d}000000/{end:%Y%m%d}235959"
+               "/adjusted/EST5EDT.json")
+        response = get_with_retry(
+            self._session, url, params=None, timeout_s=self._timeout_s,
+            max_retries=self._max_retries, backoff_s=1.0, source=self.source,
+        )
+        if response.status_code == 404:
+            return clean_series(None)
+        if response.status_code >= 400:
+            raise DataProviderError(f"CNBC HTTP {response.status_code} for {symbol}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise DataProviderError(f"CNBC returned no JSON for {symbol}") from exc
+        return _window(parse_cnbc_bars(payload, symbol), start, end)
+
+
+def parse_cnbc_bars(payload: Any, symbol: str = "") -> pd.Series:
+    """``barData.priceBars[]`` -> close by date (``tradeTime`` ``YYYYMMDDhhmmss`` or epoch ms)."""
+    bar_data = payload.get("barData") if isinstance(payload, dict) else None
+    if not isinstance(bar_data, dict):
+        raise DataProviderError(f"unexpected CNBC payload for {symbol}")
+    bars = bar_data.get("priceBars") or []
+    dates, closes = [], []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        dates.append(_cnbc_day(bar))
+        closes.append(bar.get("close"))
+    return clean_series(pd.Series(closes, index=pd.DatetimeIndex(dates).normalize(), dtype="object"))
+
+
+def _cnbc_day(bar: dict[str, Any]) -> pd.Timestamp | None:
+    stamp = str(bar.get("tradeTime") or "")
+    if len(stamp) >= 8 and stamp[:8].isdigit():
+        return pd.Timestamp(f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}")
+    try:
+        return pd.Timestamp(int(float(bar.get("tradeTimeinMills") or "")), unit="ms")
+    except (TypeError, ValueError):
+        return None  # NaT once in the index: dropped by clean_series

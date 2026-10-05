@@ -91,43 +91,44 @@ instruments:
           tickers: {bloomberg: SX86P Index, free: {ticker: EXI5.DE, proxy: ETF iShares Stoxx 600 Real Estate}}}
 
   # -------------------------------------------------------------------- taux
-  # Génériques Bloomberg (rendements en %). Fallback gratuit : rendements génériques Stooq
-  # (stooq:<maturité><pays>y.b, en %, à vérifier), une seule source pour les quatre pays afin
-  # que les spreads restent cohérents. "a|b" = chaîne de secours : si Stooq est bloqué (pare-feu
-  # d'entreprise), le Bund passe sur la courbe officielle de la Bundesbank (zéro-coupon
-  # Svensson, quelques pb d'écart avec le générique), signalée en avertissement.
+  # Génériques Bloomberg (rendements en %). Fallback gratuit en chaîne "a|b|c" (la première
+  # source qui répond l'emporte, un repli est signalé en avertissement) :
+  #   1. CNBC (cnbc:<PAYS><n>Y-<PAYS>, en %) - même source pour les quatre pays, spreads cohérents ;
+  #   2. Stooq (stooq:<n><pays>y.b) - souvent derrière une page anti-robot ;
+  #   3. Bund uniquement : courbe officielle de la Bundesbank (zéro-coupon Svensson, quelques
+  #      pb d'écart avec le générique : les spreads contre OAT / BTP en sont légèrement biaisés).
   BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR2 Index, free: "stooq:2dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR2 Index, free: "cnbc:DE2Y-DE|stooq:2dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A"}}
   BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR5 Index, free: "stooq:5dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R05XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR5 Index, free: "cnbc:DE5Y-DE|stooq:5dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R05XX.R.A.A._Z._Z.A"}}
   BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR10 Index, free: "stooq:10dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR10 Index, free: "cnbc:DE10Y-DE|stooq:10dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"}}
   BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR30 Index, free: "stooq:30dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R30XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR30 Index, free: "cnbc:DE30Y-DE|stooq:30dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R30XX.R.A.A._Z._Z.A"}}
   OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France,
-              tickers: {bloomberg: GFRN2 Index, free: "stooq:2fry.b"}}
+              tickers: {bloomberg: GFRN2 Index, free: "cnbc:FR2Y-FR|stooq:2fry.b"}}
   OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France,
-              tickers: {bloomberg: GFRN5 Index, free: "stooq:5fry.b"}}
+              tickers: {bloomberg: GFRN5 Index, free: "cnbc:FR5Y-FR|stooq:5fry.b"}}
   OAT_10Y:   {name: OAT 10 ans,  class: rates, group: France,
-              tickers: {bloomberg: GFRN10 Index, free: "stooq:10fry.b"}}
+              tickers: {bloomberg: GFRN10 Index, free: "cnbc:FR10Y-FR|stooq:10fry.b"}}
   OAT_30Y:   {name: OAT 30 ans,  class: rates, group: France,
-              tickers: {bloomberg: GFRN30 Index, free: "stooq:30fry.b"}}
+              tickers: {bloomberg: GFRN30 Index, free: "cnbc:FR30Y-FR|stooq:30fry.b"}}
   BTP_2Y:    {name: BTP 2 ans,   class: rates, group: Italie,
-              tickers: {bloomberg: GBTPGR2 Index, free: "stooq:2ity.b"}}
+              tickers: {bloomberg: GBTPGR2 Index, free: "cnbc:IT2Y-IT|stooq:2ity.b"}}
   BTP_5Y:    {name: BTP 5 ans,   class: rates, group: Italie,
-              tickers: {bloomberg: GBTPGR5 Index, free: "stooq:5ity.b"}}
+              tickers: {bloomberg: GBTPGR5 Index, free: "cnbc:IT5Y-IT|stooq:5ity.b"}}
   BTP_10Y:   {name: BTP 10 ans,  class: rates, group: Italie,
-              tickers: {bloomberg: GBTPGR10 Index, free: "stooq:10ity.b"}}
+              tickers: {bloomberg: GBTPGR10 Index, free: "cnbc:IT10Y-IT|stooq:10ity.b"}}
   BTP_30Y:   {name: BTP 30 ans,  class: rates, group: Italie,
-              tickers: {bloomberg: GBTPGR30 Index, free: "stooq:30ity.b"}}
+              tickers: {bloomberg: GBTPGR30 Index, free: "cnbc:IT30Y-IT|stooq:30ity.b"}}
   BONOS_2Y:  {name: Bonos 2 ans,  class: rates, group: Espagne,
-              tickers: {bloomberg: GSPG2YR Index, free: "stooq:2esy.b"}}
+              tickers: {bloomberg: GSPG2YR Index, free: "cnbc:ES2Y-ES|stooq:2esy.b"}}
   BONOS_5Y:  {name: Bonos 5 ans,  class: rates, group: Espagne,
-              tickers: {bloomberg: GSPG5YR Index, free: "stooq:5esy.b"}}
+              tickers: {bloomberg: GSPG5YR Index, free: "cnbc:ES5Y-ES|stooq:5esy.b"}}
   BONOS_10Y: {name: Bonos 10 ans, class: rates, group: Espagne,
-              tickers: {bloomberg: GSPG10YR Index, free: "stooq:10esy.b"}}
+              tickers: {bloomberg: GSPG10YR Index, free: "cnbc:ES10Y-ES|stooq:10esy.b"}}
   BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne,
-              tickers: {bloomberg: GSPG30YR Index, free: "stooq:30esy.b"}}
+              tickers: {bloomberg: GSPG30YR Index, free: "cnbc:ES30Y-ES|stooq:30esy.b"}}
   UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,   # FRED (J-1), sinon future Micro 2Y
               tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2, free: "fred:DGS2|2YY=F"}}
   UST_5Y:    {name: UST 5 ans,  class: rates, group: États-Unis,

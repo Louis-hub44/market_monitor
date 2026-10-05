@@ -112,14 +112,15 @@ def test_default_sources_share_the_corporate_session(tmp_path):
     sessions = {id(client._session) for client in provider._sources.values()}
     assert len(sessions) == 1
     assert next(iter(provider._sources.values()))._session.verify is False
-    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "stoxx:"}
+    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "stoxx:", "cnbc:"}
 
 
 def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
     ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
     for country in ("BUND", "OAT", "BTP", "BONOS"):
         for tenor in ("2Y", "5Y", "10Y", "30Y"):
-            assert ref.get(f"{country}_{tenor}").tickers["free"].ticker.startswith("stooq:")
+            chain = ref.get(f"{country}_{tenor}").tickers["free"].ticker.split("|")
+            assert chain[0].startswith("cnbc:") and chain[1].startswith("stooq:")
     assert ref.get("UST_2Y").tickers["free"].ticker == "fred:DGS2|2YY=F"
     assert "|bbk:BBSIS/" in ref.get("BUND_10Y").tickers["free"].ticker
     assert ref.get("V2X").tickers["free"].ticker == "stoxx:v2tx"
@@ -198,3 +199,39 @@ def test_cli_ecb_series(monkeypatch, capsys):
     monkeypatch.setattr(ECBClient, "search", lambda self, flow, pattern: frame)
     assert main(["--config", str(REPO_CONFIG), "ecb-series", "FM", "D.FR....YLD"]) == 0
     assert "ecb:FM/D.FR.EUR.4F.BB.FR10YT_RR.YLD  2026-10-02 = 3.1  France 10Y" in capsys.readouterr().out
+
+
+def test_stooq_anti_bot_page_trips_the_breaker():
+    from market_monitor.exceptions import ProviderUnavailableError
+
+    page = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><noscript>T'
+    with pytest.raises(ProviderUnavailableError, match="anti-bot"):
+        parse_stooq_csv(page, "10fry.b")
+    sources = {"stooq:": StooqClient(session=FakeSession([FakeResponse(200, text=page)]))}
+    provider = FreeProvider(ECBClient(session=FakeSession([])), YahooClient(lambda *a: None),
+                            sources=sources)
+    result = provider.get_history(["stooq:2fry.b", "stooq:10fry.b"], START, END)
+    assert len(sources["stooq:"]._session.calls) == 1  # second ticker skipped
+    assert "skipped" in result.errors["stooq:10fry.b"]
+
+
+CNBC = {"barData": {"priceBars": [
+    {"tradeTime": "20260930000000", "tradeTimeinMills": "1790726400000", "close": "3.05"},
+    {"tradeTime": "20261001000000", "close": "3.10"},
+    {"tradeTimeinMills": "1791158400000", "close": "3.12"},   # 2026-10-05, outside the window
+    {"tradeTime": "20261002000000", "close": "3.08"},
+]}}
+
+
+def test_cnbc_bars():
+    from market_monitor.data.providers.public import CnbcClient, parse_cnbc_bars
+
+    assert parse_cnbc_bars(CNBC).tolist() == [3.05, 3.10, 3.08, 3.12]
+    session = FakeSession([FakeResponse(200, payload=CNBC)])
+    assert CnbcClient(session=session).fetch("FR10Y-FR", START, END).tolist() == [3.10, 3.08]
+    assert session.calls[0]["url"].endswith(
+        "/FR10Y-FR/1D/20261001000000/20261002235959/adjusted/EST5EDT.json")
+    with pytest.raises(DataProviderError, match="unexpected CNBC payload"):
+        parse_cnbc_bars({"error": "x"})
+    with pytest.raises(DataProviderError, match="no JSON"):
+        CnbcClient(session=FakeSession([FakeResponse(200)])).fetch("X", START, END)

@@ -3,8 +3,8 @@
 Native tickers (prefix routes to the source, no prefix = Yahoo):
     * ``ecb:<flow>/<key>``  e.g. ``ecb:EST/B.EU000A2X2A25.WT`` (€STR),
       ``ecb:YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y`` (AAA euro curve, 10Y spot);
-    * ``stooq:``, ``bbk:``, ``fred:``, ``stoxx:`` - see :mod:`.public` (sovereign yields,
-      Bundesbank curve, FRED, VSTOXX);
+    * ``stooq:``, ``bbk:``, ``fred:``, ``stoxx:``, ``cnbc:`` - see :mod:`.public` (sovereign
+      yields, Bundesbank curve, FRED, VSTOXX);
     * ``yf:<symbol>`` or ``<symbol>``  e.g. ``^STOXX50E``, ``EURUSD=X``, ``BZ=F``, ``^VIX``;
     * ``a|b|c`` - fallback chain: the first alternative returning data wins (e.g. Stooq,
       then the Bundesbank when a corporate firewall blocks Stooq).
@@ -29,7 +29,13 @@ import requests
 from market_monitor.data.base import DataProvider
 from market_monitor.data.models import NO_DATA, Field, HistoryRequest, HistoryResult
 from market_monitor.data.providers._http import get_with_retry
-from market_monitor.data.providers.public import BundesbankClient, FredClient, StooqClient, StoxxClient
+from market_monitor.data.providers.public import (
+    BundesbankClient,
+    CnbcClient,
+    FredClient,
+    StooqClient,
+    StoxxClient,
+)
 from market_monitor.data.quality import assemble_frame, clean_series
 from market_monitor.exceptions import DataProviderError, ProviderUnavailableError
 from market_monitor.network import apply_to_yfinance
@@ -322,4 +328,5 @@ def default_sources(
         "bbk:": BundesbankClient(**kwargs),
         "fred:": FredClient(**kwargs),
         "stoxx:": StoxxClient(**kwargs),
+        "cnbc:": CnbcClient(**kwargs),
     }

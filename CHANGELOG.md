@@ -1,5 +1,12 @@
 # Historique des versions
 
+## 1.2.2 — taux souverains via CNBC
+- Nouvelle source `cnbc:` (barres quotidiennes CNBC) en tête des chaînes Bund / OAT / BTP /
+  Bonos : une seule source pour les quatre pays, spreads cohérents.
+- Page anti-robot de Stooq reconnue : Stooq est ignoré par le coupe-circuit au lieu d'être
+  interrogé pour chaque ticker.
+- *Tester la connexion* sonde aussi CNBC.
+
 ## 1.2.1 — réseau d'entreprise filtré
 - Chaînes de secours `a|b` dans le provider `free` : Bund Stooq → Bundesbank, UST 2 ans
   FRED → future `2YY=F` ; le repli est signalé en avertissement.
