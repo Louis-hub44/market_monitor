@@ -19,6 +19,13 @@ providers:
     ecb_base_url: https://data-api.ecb.europa.eu/service/data
     timeout_s: 20
 
+network:
+  # Proxy d'inspection SSL d'entreprise (Zscaler, Netskope...) : « certificate verify
+  # failed » sur toutes les sources. Appliqué à FMP, BCE et Yahoo (yfinance).
+  # Surchargeable par MARKET_MONITOR_CA_BUNDLE / MARKET_MONITOR_INSECURE_SSL.
+  ca_bundle:                         # certificat racine de l'entreprise (PEM) - solution sûre
+  insecure_ssl: false                # true = vérification SSL désactivée : réseau de confiance uniquement
+
 cache:
   enabled: true
   directory: ../.cache/market_data   # relatif à ce fichier

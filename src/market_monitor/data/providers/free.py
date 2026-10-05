@@ -12,6 +12,8 @@ import io
 import logging
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
+from functools import partial
+from typing import Any
 
 import pandas as pd
 import requests
@@ -21,6 +23,7 @@ from market_monitor.data.models import Field, HistoryRequest, HistoryResult
 from market_monitor.data.providers._http import get_with_retry
 from market_monitor.data.quality import assemble_frame, clean_series
 from market_monitor.exceptions import DataProviderError, ProviderUnavailableError
+from market_monitor.network import apply_to_yfinance
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +94,14 @@ def parse_ecb_csv(text: str) -> pd.Series:
 
 
 class YahooClient:
-    """Thin wrapper around ``yfinance.download`` (unofficial API - fallback only)."""
+    """Thin wrapper around ``yfinance.download`` (unofficial API - fallback only).
 
-    def __init__(self, downloader: Downloader | None = None) -> None:
-        self._download = downloader or _yfinance_download
+    ``session`` (see :func:`market_monitor.network.build_session`) replaces yfinance's
+    native ``curl_cffi`` session - needed behind a corporate SSL-inspection proxy.
+    """
+
+    def __init__(self, downloader: Downloader | None = None, *, session: Any = None) -> None:
+        self._download = downloader or partial(_yfinance_download, session=session)
 
     def fetch(
         self, tickers: Sequence[str], start: date, end: date, field: Field
@@ -109,11 +116,16 @@ class YahooClient:
         return extract_yahoo_field(raw, tickers, _YF_FIELDS[field])
 
 
-def _yfinance_download(tickers: Sequence[str], start: date, end: date) -> pd.DataFrame:
+def _yfinance_download(
+    tickers: Sequence[str], start: date, end: date, *, session: Any = None
+) -> pd.DataFrame:
     try:
         import yfinance as yf
     except ImportError as exc:
         raise ProviderUnavailableError("yfinance is not installed") from exc
+    if session is not None:
+        # yfinance shares one singleton session: (re)apply ours before each call.
+        apply_to_yfinance(session)
     return yf.download(
         tickers=list(tickers),
         start=start.isoformat(),
@@ -124,6 +136,7 @@ def _yfinance_download(tickers: Sequence[str], start: date, end: date) -> pd.Dat
         progress=False,
         threads=True,
         group_by="column",
+        session=session,
     )
 
 

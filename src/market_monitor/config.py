@@ -18,6 +18,7 @@ import yaml
 from dotenv import load_dotenv
 
 from market_monitor.exceptions import ConfigError
+from market_monitor.network import env_ca_bundle, env_insecure
 
 KNOWN_PROVIDERS = ("bloomberg", "fmp", "free")
 ENV_CONFIG_PATH = "MARKET_MONITOR_CONFIG"
@@ -47,6 +48,18 @@ class FMPSettings:
 class FreeSettings:
     ecb_base_url: str = "https://data-api.ecb.europa.eu/service/data"
     timeout_s: float = 20.0
+
+
+@dataclass(frozen=True)
+class NetworkSettings:
+    """Corporate SSL-inspection proxy workaround (see :mod:`market_monitor.network`)."""
+
+    insecure_ssl: bool = False        # verify=False - trusted corporate network only
+    ca_bundle: Path | None = None     # corporate root CA (PEM): wins over insecure_ssl
+
+    @property
+    def customised(self) -> bool:
+        return self.insecure_ssl or self.ca_bundle is not None
 
 
 @dataclass(frozen=True)
@@ -89,6 +102,7 @@ class Settings:
     bloomberg: BloombergSettings = BloombergSettings()
     fmp: FMPSettings = FMPSettings()
     free: FreeSettings = FreeSettings()
+    network: NetworkSettings = NetworkSettings()
     cache: CacheSettings = CacheSettings()
     analytics: AnalyticsSettings = AnalyticsSettings()
     ui: UiSettings = UiSettings()
@@ -134,6 +148,9 @@ def settings_from_dict(
     analytics = _section(raw, "analytics")
     ui = _section(raw, "ui")
     export = _section(raw, "export")
+    network = _section(raw, "network")
+    env_insecure_ssl = env_insecure(env)
+    ca_bundle = env_ca_bundle(env) or str(network.get("ca_bundle") or "").strip()
     return Settings(
         priority=_priority(env.get(ENV_PROVIDERS) or providers.get("priority", KNOWN_PROVIDERS)),
         bloomberg=BloombergSettings(
@@ -150,6 +167,11 @@ def settings_from_dict(
         free=FreeSettings(
             ecb_base_url=str(free.get("ecb_base_url", FreeSettings.ecb_base_url)),
             timeout_s=_float(free, "timeout_s", 20.0),
+        ),
+        network=NetworkSettings(
+            insecure_ssl=(bool(network.get("insecure_ssl", False)) if env_insecure_ssl is None
+                          else env_insecure_ssl),
+            ca_bundle=_path(ca_bundle, base_dir) if ca_bundle else None,
         ),
         cache=CacheSettings(
             enabled=bool(cache.get("enabled", True)),
