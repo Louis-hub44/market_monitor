@@ -1,0 +1,27 @@
+# Watchlists du Market Monitor.
+# Entrées possibles : un identifiant (SX5E), "*" (tout le référentiel),
+# "class:<classe>" ou "group:<groupe>" (dans l'ordre du référentiel).
+
+watchlists:
+  home:
+    description: Écran d'accueil multi-actifs
+    instruments: ["*"]
+
+  daily_macro:
+    description: Bandeaux de la revue macro (indices, taux 10 ans, marchés clés)
+    instruments: [SX5E, CAC, DAX, FTSEMIB, SPX, NDX, NKY,
+                  BUND_10Y, OAT_10Y, BTP_10Y, UST_10Y, OAT_BUND_10Y, BTP_BUND_10Y,
+                  BRENT, EURUSD, VIX, MXEF, GOLD, BTC]
+
+  sectors:
+    description: Secteurs Stoxx 600
+    instruments: ["group:Secteurs Stoxx 600"]
+
+  rates:
+    description: Taux, spreads et pentes
+    instruments: ["class:rates", "class:credit"]
+
+  cross_asset:
+    description: Panier cross-asset (corrélations)
+    instruments: [SX5E, SPX, NKY, MXEF, BUND_10Y, UST_10Y, BTP_BUND_10Y, UST_2S10S,
+                  ITRX_XOVER, EURUSD, USDJPY, DXY, BRENT, GOLD, COPPER, VIX, BTC]

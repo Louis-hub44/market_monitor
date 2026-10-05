@@ -1,0 +1,58 @@
+# Market Monitor - configuration (aucun secret ici : la clé FMP est dans .env)
+
+providers:
+  # Ordre de priorité = chaîne de fallback, instrument par instrument.
+  # Surchargeable par la variable d'environnement MARKET_MONITOR_PROVIDERS.
+  priority: [bloomberg, fmp, free]
+
+  bloomberg:            # Desktop API (Terminal ouvert et loggé)
+    host: localhost
+    port: 8194
+    timeout_ms: 30000
+
+  fmp:
+    base_url: https://financialmodelingprep.com/stable
+    timeout_s: 15
+    max_retries: 3
+
+  free:
+    ecb_base_url: https://data-api.ecb.europa.eu/service/data
+    timeout_s: 20
+
+cache:
+  enabled: true
+  directory: ../.cache/market_data   # relatif à ce fichier
+  intraday_ttl_minutes: 15           # durée de vie des points "du jour" (provisoires)
+  refresh_lookback_days: 5           # jours recalés à chaque rafraîchissement (révisions, prints tardifs)
+
+market:
+  timezone: Europe/Paris
+
+logging:
+  level: INFO                     # DEBUG | INFO | WARNING | ERROR
+  file: ../logs/market_monitor.log  # journal tournant (1 Mo x 5), utile en tâche planifiée
+
+referential:                      # chemins relatifs à ce fichier
+  instruments: instruments.yaml
+  watchlists: watchlists.yaml
+
+analytics:
+  zscore_window: 252              # variations quotidiennes servant à estimer mu et sigma (~1 an)
+  zscore_min_obs: 60              # en dessous : z-score = NaN
+  zscore_demean: true             # false -> mu = 0 (mouvement exprimé en sigmas)
+  stale_bdays: 2                  # dernier print plus vieux (jours ouvrés) -> ligne "stale"
+  max_reference_gap_days: 7       # print de référence trop éloigné de sa date cible -> NaN
+
+ui:
+  default_watchlist: home
+  cache_ttl_minutes: 5            # cache du rapport côté Streamlit
+  heatmap_columns: 8              # tuiles par ligne
+  zscore_clip: 3.0                # saturation des couleurs à |z| = 3
+  top_movers: 6                   # nombre de mouvements marquants affichés
+
+export:                           # chemins relatifs à ce fichier
+  layout: daily_macro.yaml        # bandeaux, colonnes, règles des mouvements marquants
+  output_dir: ../exports          # dossier des fichiers Excel / PNG / texte
+
+alerts:
+  rules: alerts.yaml              # règles d'alerte (seuils, z-scores, données périmées)

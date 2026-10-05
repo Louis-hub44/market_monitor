@@ -1,0 +1,100 @@
+# Règles d'alerte du Market Monitor.
+#
+# type     : zscore | level | change | stale
+# instruments / instrument : identifiants, "*", "class:...", "group:...", "watchlist:..."
+# severity : info | warning | critical
+#
+# zscore : horizon (1d | 1w), min_abs_z, critical_abs_z (optionnel), direction (both | up | down)
+# level  : above | below, dans l'unité du référentiel (rendement en %, spread en pb, prix) ;
+#          cross: true -> seulement le jour où le seuil est franchi
+# change : horizon (1d | 1w | mtd | ytd) et above | below | abs_above, dans la convention
+#          de l'instrument (% pour les prix, pb pour les taux et spreads, points pour la vol)
+
+rules:
+  # ------------------------------------------------------------ z-scores
+  - id: big_daily_moves
+    name: Mouvement de séance inhabituel
+    type: zscore
+    instruments: ["*"]
+    horizon: 1d
+    min_abs_z: 2.5
+    critical_abs_z: 4.0
+    severity: warning
+
+  - id: big_weekly_moves
+    name: Mouvement hebdomadaire inhabituel
+    type: zscore
+    instruments: ["watchlist:daily_macro"]
+    horizon: 1w
+    min_abs_z: 2.5
+    severity: info
+
+  # -------------------------------------------------------- niveaux clés
+  - id: btp_bund_stress
+    name: Spread BTP-Bund au-dessus de 150 pb
+    type: level
+    instrument: BTP_BUND_10Y
+    above: 150
+    severity: critical
+
+  - id: oat_bund_stress
+    name: Spread OAT-Bund au-dessus de 90 pb
+    type: level
+    instrument: OAT_BUND_10Y
+    above: 90
+    severity: warning
+
+  - id: vix_stress
+    name: VIX au-dessus de 25
+    type: level
+    instrument: VIX
+    above: 25
+    severity: warning
+
+  - id: ust_curve_inversion
+    name: Inversion de la courbe UST 2s10s
+    type: level
+    instrument: UST_2S10S
+    below: 0
+    cross: true
+    severity: warning
+
+  - id: eurusd_120
+    name: EUR/USD franchit 1,20
+    type: level
+    instrument: EURUSD
+    above: 1.20
+    cross: true
+    severity: info
+
+  # ----------------------------------------------------------- variations
+  - id: brent_shock
+    name: Choc sur le Brent
+    type: change
+    instrument: BRENT
+    horizon: 1d
+    abs_above: 4.0          # %
+    severity: warning
+
+  - id: eur_rates_week
+    name: Taux 10 ans européens, forte variation sur la semaine
+    type: change
+    instruments: [BUND_10Y, OAT_10Y, BTP_10Y, BONOS_10Y]
+    horizon: 1w
+    abs_above: 15           # pb
+    severity: info
+
+  - id: equity_drawdown_mtd
+    name: Indices actions en baisse de plus de 5 % sur le mois
+    type: change
+    instruments: [SX5E, CAC, DAX, SPX, NDX]
+    horizon: mtd
+    below: -5.0             # %
+    severity: warning
+
+  # ----------------------------------------------------- qualité de données
+  - id: stale_daily_macro
+    name: Donnée périmée dans la daily macro
+    type: stale
+    instruments: ["watchlist:daily_macro"]
+    severity: warning

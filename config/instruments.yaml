@@ -1,0 +1,184 @@
+# Référentiel d'instruments du Market Monitor.
+#
+# Chaque instrument : identifiant canonique (MAJUSCULES), nom, classe d'actifs, groupe
+# d'affichage, type de cotation, unité, et ticker natif par provider.
+#
+#   quote  : price  -> variations en %          (actions, FX, matières premières, crypto)
+#            yield  -> niveau en %, variations en pb (x100)
+#            spread -> niveau en pb, variations en pb
+#            vol    -> niveau en points de vol, variations en points (surchargeable : change: pct)
+#   ticker : soit une chaîne, soit {ticker, scale, proxy}
+#            scale : facteur appliqué pour ramener la source à l'unité du référentiel
+#            proxy : description si la source n'est PAS l'instrument exact (ETF, future...)
+#   derived: combinaison linéaire d'autres instruments (spreads, pentes, papillons)
+#            niveau = multiplier x somme(weight_i x niveau_i), dates communes uniquement
+#
+# Tickers marqués "à vérifier" : à contrôler sur le Terminal / la source avant production.
+
+version: 1
+
+defaults:
+  equity:      {quote: price, unit: pts}
+  rates:       {quote: yield, unit: "%"}
+  credit:      {quote: spread, unit: pb}
+  fx:          {quote: price, unit: ""}
+  commodities: {quote: price}
+  volatility:  {quote: vol, unit: pts}
+  crypto:      {quote: price, unit: USD}
+
+instruments:
+  # ------------------------------------------------------------------ actions
+  SX5E:    {name: Euro Stoxx 50, class: equity, group: Europe,
+            tickers: {bloomberg: SX5E Index, fmp: ^STOXX50E, free: ^STOXX50E}}
+  SXXP:    {name: Stoxx Europe 600, class: equity, group: Europe,
+            tickers: {bloomberg: SXXP Index, free: ^STOXX}}
+  CAC:     {name: CAC 40, class: equity, group: Europe,
+            tickers: {bloomberg: CAC Index, fmp: ^FCHI, free: ^FCHI}}
+  DAX:     {name: DAX, class: equity, group: Europe,
+            tickers: {bloomberg: DAX Index, fmp: ^GDAXI, free: ^GDAXI}}
+  FTSEMIB: {name: FTSE MIB, class: equity, group: Europe,
+            tickers: {bloomberg: FTSEMIB Index, free: FTSEMIB.MI}}
+  IBEX:    {name: IBEX 35, class: equity, group: Europe,
+            tickers: {bloomberg: IBEX Index, free: ^IBEX}}
+  SPX:     {name: S&P 500, class: equity, group: États-Unis,
+            tickers: {bloomberg: SPX Index, fmp: ^GSPC, free: ^GSPC}}
+  NDX:     {name: Nasdaq 100, class: equity, group: États-Unis,
+            tickers: {bloomberg: NDX Index, fmp: ^NDX, free: ^NDX}}
+  NKY:     {name: Nikkei 225, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: NKY Index, fmp: ^N225, free: ^N225}}
+  MXEF:    {name: MSCI Emerging Markets, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: MXEF Index,
+                      free: {ticker: EEM, proxy: ETF iShares MSCI EM (USD)}}}
+
+  # Secteurs Stoxx 600 (fallback gratuit : ETF iShares sectoriels Xetra, à vérifier)
+  SX7P:  {name: Banques, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX7P Index, free: {ticker: EXV1.DE, proxy: ETF iShares Stoxx 600 Banks}}}
+  SXIP:  {name: Assurance, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXIP Index, free: {ticker: EXH5.DE, proxy: ETF iShares Stoxx 600 Insurance}}}
+  SXFP:  {name: Services financiers, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXFP Index, free: {ticker: EXH2.DE, proxy: ETF iShares Stoxx 600 Fin. Services}}}
+  SXEP:  {name: Énergie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXEP Index, free: {ticker: EXH1.DE, proxy: ETF iShares Stoxx 600 Oil & Gas}}}
+  SX6P:  {name: Services aux collectivités, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX6P Index, free: {ticker: EXH9.DE, proxy: ETF iShares Stoxx 600 Utilities}}}
+  SXPP:  {name: Matières premières, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXPP Index, free: {ticker: EXV6.DE, proxy: ETF iShares Stoxx 600 Basic Resources}}}
+  SX4P:  {name: Chimie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX4P Index, free: {ticker: EXV7.DE, proxy: ETF iShares Stoxx 600 Chemicals}}}
+  SXOP:  {name: Construction & matériaux, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXOP Index, free: {ticker: EXV8.DE, proxy: ETF iShares Stoxx 600 Construction}}}
+  SXNP:  {name: Industrie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXNP Index, free: {ticker: EXH4.DE, proxy: ETF iShares Stoxx 600 Industrials}}}
+  SXAP:  {name: Automobile, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXAP Index, free: {ticker: EXV5.DE, proxy: ETF iShares Stoxx 600 Autos}}}
+  SX8P:  {name: Technologie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX8P Index, free: {ticker: EXV3.DE, proxy: ETF iShares Stoxx 600 Technology}}}
+  SXKP:  {name: Télécoms, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXKP Index, free: {ticker: EXV2.DE, proxy: ETF iShares Stoxx 600 Telecom}}}
+  SXMP:  {name: Médias, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXMP Index, free: {ticker: EXH6.DE, proxy: ETF iShares Stoxx 600 Media}}}
+  SXDP:  {name: Santé, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXDP Index, free: {ticker: EXV4.DE, proxy: ETF iShares Stoxx 600 Health Care}}}
+  SX3P:  {name: Alimentation & boissons, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX3P Index, free: {ticker: EXH3.DE, proxy: ETF iShares Stoxx 600 Food & Bev.}}}
+  SXQP:  {name: Biens de consommation, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXQP Index, free: {ticker: EXH7.DE, proxy: ETF iShares Stoxx 600 Pers. & Household}}}
+  SXRP:  {name: Distribution, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXRP Index, free: {ticker: EXH8.DE, proxy: ETF iShares Stoxx 600 Retail}}}
+  SXTP:  {name: Voyages & loisirs, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXTP Index, free: {ticker: EXV9.DE, proxy: ETF iShares Stoxx 600 Travel & Leisure}}}
+  SX86P: {name: Immobilier, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX86P Index}}
+
+  # -------------------------------------------------------------------- taux
+  # Génériques Bloomberg (rendements en %). Pas de source gratuite quotidienne fiable
+  # pour les courbes souveraines pays : Bloomberg only.
+  BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne, tickers: {bloomberg: GDBR2 Index}}
+  BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne, tickers: {bloomberg: GDBR5 Index}}
+  BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne, tickers: {bloomberg: GDBR10 Index}}
+  BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne, tickers: {bloomberg: GDBR30 Index}}
+  OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France, tickers: {bloomberg: GFRN2 Index}}
+  OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France, tickers: {bloomberg: GFRN5 Index}}
+  OAT_10Y:   {name: OAT 10 ans,  class: rates, group: France, tickers: {bloomberg: GFRN10 Index}}
+  OAT_30Y:   {name: OAT 30 ans,  class: rates, group: France, tickers: {bloomberg: GFRN30 Index}}
+  BTP_2Y:    {name: BTP 2 ans,   class: rates, group: Italie, tickers: {bloomberg: GBTPGR2 Index}}
+  BTP_5Y:    {name: BTP 5 ans,   class: rates, group: Italie, tickers: {bloomberg: GBTPGR5 Index}}
+  BTP_10Y:   {name: BTP 10 ans,  class: rates, group: Italie, tickers: {bloomberg: GBTPGR10 Index}}
+  BTP_30Y:   {name: BTP 30 ans,  class: rates, group: Italie, tickers: {bloomberg: GBTPGR30 Index}}
+  BONOS_2Y:  {name: Bonos 2 ans,  class: rates, group: Espagne, tickers: {bloomberg: GSPG2YR Index}}
+  BONOS_5Y:  {name: Bonos 5 ans,  class: rates, group: Espagne, tickers: {bloomberg: GSPG5YR Index}}
+  BONOS_10Y: {name: Bonos 10 ans, class: rates, group: Espagne, tickers: {bloomberg: GSPG10YR Index}}
+  BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne, tickers: {bloomberg: GSPG30YR Index}}
+  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,
+              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2}}
+  UST_5Y:    {name: UST 5 ans,  class: rates, group: États-Unis,
+              tickers: {bloomberg: USGG5YR Index, fmp: treasury:year5, free: ^FVX}}
+  UST_10Y:   {name: UST 10 ans, class: rates, group: États-Unis,
+              tickers: {bloomberg: USGG10YR Index, fmp: treasury:year10, free: ^TNX}}
+  UST_30Y:   {name: UST 30 ans, class: rates, group: États-Unis,
+              tickers: {bloomberg: USGG30YR Index, fmp: treasury:year30, free: ^TYX}}
+  ESTR:      {name: €STR, class: rates, group: Monétaire,
+              tickers: {bloomberg: ESTRON Index, free: ecb:EST/B.EU000A2X2A25.WT}}
+
+  # Spreads et pentes (en pb), calculés à partir des rendements
+  OAT_BUND_10Y: {name: Spread OAT-Bund 10 ans, class: rates, group: Spreads souverains,
+                 quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {OAT_10Y: 1, BUND_10Y: -1}}}
+  BTP_BUND_10Y: {name: Spread BTP-Bund 10 ans, class: rates, group: Spreads souverains,
+                 quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BTP_10Y: 1, BUND_10Y: -1}}}
+  BUND_2S10S:   {name: Pente Bund 2s10s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BUND_10Y: 1, BUND_2Y: -1}}}
+  BUND_5S30S:   {name: Pente Bund 5s30s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BUND_30Y: 1, BUND_5Y: -1}}}
+  UST_2S10S:    {name: Pente UST 2s10s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {UST_10Y: 1, UST_2Y: -1}}}
+  UST_5S30S:    {name: Pente UST 5s30s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {UST_30Y: 1, UST_5Y: -1}}}
+
+  # ------------------------------------------------------------------- crédit
+  ITRX_MAIN:  {name: iTraxx Europe Main 5Y, class: credit, group: iTraxx 5 ans,
+               tickers: {bloomberg: ITRXEBE CBIN Curncy}}
+  ITRX_XOVER: {name: iTraxx Crossover 5Y, class: credit, group: iTraxx 5 ans,
+               tickers: {bloomberg: ITRXEXE CBIN Curncy}}
+
+  # ---------------------------------------------------------------------- FX
+  EURUSD: {name: EUR/USD, class: fx, group: Change,
+           tickers: {bloomberg: EURUSD Curncy, fmp: EURUSD, free: EURUSD=X}}
+  EURGBP: {name: EUR/GBP, class: fx, group: Change,
+           tickers: {bloomberg: EURGBP Curncy, fmp: EURGBP, free: EURGBP=X}}
+  EURCHF: {name: EUR/CHF, class: fx, group: Change,
+           tickers: {bloomberg: EURCHF Curncy, fmp: EURCHF, free: EURCHF=X}}
+  USDJPY: {name: USD/JPY, class: fx, group: Change,
+           tickers: {bloomberg: USDJPY Curncy, fmp: USDJPY, free: JPY=X}}
+  DXY:    {name: Dollar Index, class: fx, group: Change, unit: pts,
+           tickers: {bloomberg: DXY Curncy, free: DX-Y.NYB}}
+
+  # ------------------------------------------------------- matières premières
+  # Génériques front-month : sauts possibles aux dates de roll.
+  BRENT:  {name: Brent, class: commodities, group: Énergie, unit: USD/bbl,
+           tickers: {bloomberg: CO1 Comdty, fmp: BZUSD, free: BZ=F}}
+  WTI:    {name: WTI, class: commodities, group: Énergie, unit: USD/bbl,
+           tickers: {bloomberg: CL1 Comdty, fmp: CLUSD, free: CL=F}}
+  TTF:    {name: Gaz TTF (front month), class: commodities, group: Énergie, unit: EUR/MWh,
+           tickers: {bloomberg: TTFG1MON OECM Index, free: TTF=F}}   # à vérifier
+  GOLD:   {name: Or, class: commodities, group: Métaux, unit: USD/oz,
+           tickers: {bloomberg: XAU Curncy,
+                     fmp: {ticker: GCUSD, proxy: future front-month (spot sur Bloomberg)},
+                     free: {ticker: GC=F, proxy: future front-month (spot sur Bloomberg)}}}
+  COPPER: {name: Cuivre (COMEX), class: commodities, group: Métaux, unit: USD/lb,
+           tickers: {bloomberg: HG1 Comdty, fmp: HGUSD, free: HG=F}}
+
+  # -------------------------------------------------------------- volatilité
+  VIX:  {name: VIX, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: VIX Index, fmp: ^VIX, free: ^VIX}}
+  V2X:  {name: VSTOXX, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: V2X Index, free: ^V2TX}}
+  MOVE: {name: MOVE, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: MOVE Index, free: ^MOVE}}
+
+  # ------------------------------------------------------------------ crypto
+  BTC: {name: Bitcoin, class: crypto, group: Crypto,
+        tickers: {bloomberg: XBTUSD Curncy, fmp: BTCUSD, free: BTC-USD}}
+  ETH: {name: Ether, class: crypto, group: Crypto,
+        tickers: {bloomberg: XETUSD Curncy, fmp: ETHUSD, free: ETH-USD}}

@@ -1,0 +1,24 @@
+# Mise en page de l'export « daily macro » (Excel, PNG, texte).
+# Les bandeaux reprennent ceux de la revue : indices, taux 10 ans, marchés clés.
+
+title: Revue de marché
+
+sections:
+  - title: Indices actions
+    instruments: [SX5E, CAC, DAX, FTSEMIB, SPX, NDX, NKY]
+  - title: Taux 10 ans
+    instruments: [BUND_10Y, OAT_10Y, BTP_10Y, UST_10Y, OAT_BUND_10Y, BTP_BUND_10Y]
+  - title: Marchés clés
+    instruments: [BRENT, EURUSD, VIX, MXEF, GOLD, BTC]
+
+# Variations affichées, parmi chg_1d, chg_1w, chg_mtd, chg_ytd
+columns: [chg_1d, chg_ytd]
+
+movers:
+  universe: home          # watchlist (ou sélecteur) dans laquelle chercher les mouvements
+  count: 8
+  min_abs_z: 1.5          # seuil de |z 1J| pour figurer dans les mouvements marquants
+  strong_z: 2.5           # au-delà : « forte hausse », « forte détente »...
+  show_zscore: true       # ajoute (z +2,8) dans le texte
+
+file_prefix: daily_macro  # daily_macro_2026-10-05.xlsx / .png / .txt
