@@ -1,5 +1,16 @@
 # Historique des versions
 
+## 1.2.1 — réseau d'entreprise filtré
+- Chaînes de secours `a|b` dans le provider `free` : Bund Stooq → Bundesbank, UST 2 ans
+  FRED → future `2YY=F` ; le repli est signalé en avertissement.
+- Coupe-circuit : une source injoignable est ignorée 10 minutes (un seul délai d'attente au
+  lieu d'un par ticker) ; une seule nouvelle tentative pour les sources publiques.
+- Le dashboard recharge le référentiel quand un fichier YAML ou la version change, sans
+  redémarrer Streamlit ; version affichée dans la barre latérale.
+- *Tester la connexion* : sondes en parallèle, Bundesbank et STOXX ajoutés, 401 = joignable
+  (clé requise), page de blocage du proxy détectée, code HTTP affiché.
+- `market-monitor ecb-series FLOW MOTIF` : recherche de séries BCE.
+
 ## 1.2.0 — sources gratuites pour les taux
 - Nouvelles sources sans clé dans le provider `free` : Stooq (`stooq:`), Bundesbank
   (`bbk:`), FRED (`fred:`), STOXX (`stoxx:`), avec la même politique SSL que les autres.

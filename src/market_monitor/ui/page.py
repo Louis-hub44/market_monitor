@@ -7,19 +7,30 @@ Widget keys are prefixed with ``key`` so the page can coexist with other modules
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
+from market_monitor import __version__
 from market_monitor.alerts import AlertRule, load_rules
 from market_monitor.analytics.performance import Horizon, rank_movers
-from market_monitor.config import Settings, UiSettings, configure_logging, load_settings
+from market_monitor.config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_ENV_PATH,
+    ENV_CONFIG_PATH,
+    Settings,
+    UiSettings,
+    configure_logging,
+    load_settings,
+)
 from market_monitor.exceptions import MarketMonitorError
 from market_monitor.export import DailyMacroLayout, load_layout
 from market_monitor.monitor import MarketMonitor, PerformanceReport
@@ -113,8 +124,9 @@ def main() -> None:
     """Standalone app: ``streamlit run app.py``."""
     st.set_page_config(page_title="Market Monitor", page_icon=":material/monitoring:", layout="wide")
     st.markdown(theme.page_css(), unsafe_allow_html=True)
+    stamp = _config_stamp()
     try:
-        settings = _settings()
+        settings = _settings(stamp)
         configure_logging(settings)
     except MarketMonitorError as exc:
         st.error(f"Configuration invalide : {exc}")
@@ -127,9 +139,9 @@ def main() -> None:
         network = chosen
         settings = replace(settings, network=network)
     try:
-        monitor = _monitor(settings, network.insecure_ssl, str(network.ca_bundle or ""))
-        layout = _layout(settings, monitor)
-        rules = _rules(settings, monitor)
+        monitor = _monitor(settings, network.insecure_ssl, str(network.ca_bundle or ""), stamp)
+        layout = _layout(settings, monitor, stamp)
+        rules = _rules(settings, monitor, stamp)
     except MarketMonitorError as exc:
         st.error(f"Configuration invalide : {exc}")
         st.stop()
@@ -140,26 +152,38 @@ def main() -> None:
 
 
 # ===================================================================== loading
+def _config_stamp() -> str:
+    """Version + modification times of the configuration files.
+
+    Part of every resource-cache key: editing a YAML file or installing a new version
+    reloads the referential without restarting the Streamlit server.
+    """
+    config = Path(os.environ.get(ENV_CONFIG_PATH) or DEFAULT_CONFIG_PATH)
+    files = sorted(config.parent.glob("*.yaml")) + [DEFAULT_ENV_PATH]
+    times = [f"{f.name}:{f.stat().st_mtime_ns}" for f in files if f.is_file()]
+    return "|".join([__version__, *times])
+
+
 @st.cache_resource(show_spinner=False)
-def _settings() -> Settings:
+def _settings(stamp: str) -> Settings:
     return load_settings()
 
 
 @st.cache_resource(show_spinner="Connexion aux sources de données…")
-def _monitor(_settings: Settings, insecure_ssl: bool, ca_bundle: str) -> MarketMonitor:
-    """One monitor per network policy (the two plain arguments are the cache key)."""
+def _monitor(_settings: Settings, insecure_ssl: bool, ca_bundle: str, stamp: str) -> MarketMonitor:
+    """One monitor per network policy and configuration version (the plain arguments are the key)."""
     return MarketMonitor.from_settings(_settings)
 
 
 @st.cache_resource(show_spinner=False)
-def _layout(_settings: Settings, _monitor: MarketMonitor) -> DailyMacroLayout | None:
+def _layout(_settings: Settings, _monitor: MarketMonitor, stamp: str) -> DailyMacroLayout | None:
     if not _settings.daily_macro_path.is_file():
         return None
     return load_layout(_settings.daily_macro_path, _monitor.referential)
 
 
 @st.cache_resource(show_spinner=False)
-def _rules(_settings: Settings, _monitor: MarketMonitor) -> tuple[AlertRule, ...]:
+def _rules(_settings: Settings, _monitor: MarketMonitor, stamp: str) -> tuple[AlertRule, ...]:
     if not _settings.alerts_path.is_file():
         return ()
     return load_rules(_settings.alerts_path, _monitor.referential)
@@ -198,7 +222,7 @@ def _sidebar(monitor: MarketMonitor, ui: UiSettings, key: str) -> tuple[str, dat
                      width="stretch", key=f"{key}-refresh"):
             bump_refresh_nonce(key)
         chain = ", ".join(SOURCE_LABELS.get(n, n) for n in monitor.service.provider_names)
-        st.caption(f"Sources par ordre de priorité : {chain}.")
+        st.caption(f"Sources par ordre de priorité : {chain}. Version {__version__}.")
     return watchlist, as_of if isinstance(as_of, date) else today
 
 

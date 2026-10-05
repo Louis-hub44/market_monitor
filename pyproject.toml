@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "market-monitor"
-version = "1.2.0"
+version = "1.2.1"
 description = "Market Monitor - ecran d'accueil multi-actifs du mini terminal (WEI / WB / FXC / CMDTY)"
 requires-python = ">=3.11"
 dependencies = [

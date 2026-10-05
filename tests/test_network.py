@@ -171,3 +171,17 @@ def test_settings_network_gate_flag(tmp_path):
     assert settings_from_dict({}, base_dir=tmp_path, env={}).ui.network_gate
     raw = {"ui": {"network_gate": False}}
     assert not settings_from_dict(raw, base_dir=tmp_path, env={}).ui.network_gate
+
+
+def test_probe_401_is_reachable_and_block_page_is_proxy():
+    assert network.check_endpoint("https://x", FakeSession([FakeResponse(401)]))["ok"]
+    page = FakeResponse(403, text="<html><title>Zscaler</title>This site is blocked</html>")
+    diag = network.check_endpoint("https://x", FakeSession([page]))
+    assert diag["kind"] == "proxy" and not diag["ok"]
+    assert not network.looks_like_proxy_block("Date,Close\n2026-10-01,2.7")
+
+
+def test_check_connectivity_parallel_matches_sequential():
+    probes = {"A": "https://a", "B": "https://b"}
+    diag = network.check_connectivity(FakeSession([FakeResponse(200)]), probes=probes, parallel=True)
+    assert diag["kind"] == "ok" and list(diag["results"]) == ["A", "B"]

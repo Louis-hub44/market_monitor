@@ -188,10 +188,21 @@ la section `network` (usage à la maison).
 Sans Bloomberg, le fallback gratuit couvre les courbes Bund / OAT / BTP / Bonos (Stooq, une
 seule source pour que les spreads restent cohérents ; la courbe Bundesbank est indiquée en
 commentaire dans `instruments.yaml` en secours pour le Bund), l'UST 2 ans (FRED), le VSTOXX
-(STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Ces sources n'ont pas de
+(STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Un ticker peut être une
+**chaîne de secours** `a|b` : la première source qui répond l'emporte, un repli est signalé en
+avertissement (Bund : Stooq puis Bundesbank ; UST 2 ans : FRED puis future Micro 2Y `2YY=F`).
+Une source injoignable (pare-feu) est ignorée 10 minutes après le premier échec, au lieu de
+coûter un délai d'attente par ticker. Ces sources n'ont pas de
 clé ni de garantie de service : `market-monitor fetch --provider free --tickers stooq:10fry.b
 --no-cache` vérifie un ticker en une commande. Restent sans source gratuite : les indices
 iTraxx (données Markit sous licence), Bloomberg uniquement.
+
+Sur un réseau d'entreprise, *Tester la connexion* (écran de démarrage) indique quelles
+sources passent. Si seule la BCE répond, `market-monitor ecb-series FLOW MOTIF` liste les
+séries qu'elle publie (dimension vide = joker, `+` = ou), par exemple
+`market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"` ; une clé trouvée s'utilise ensuite comme
+`ecb:FM/<clé>` dans `instruments.yaml`. Sinon, demander à l'informatique d'ouvrir `stooq.com`,
+`fred.stlouisfed.org`, `api.statistiken.bundesbank.de` et `www.stoxx.com`.
 
 Un provider indisponible (pas de `blpapi`, pas de clé FMP) est ignoré au démarrage ; un
 provider qui tombe en cours de route (Terminal fermé, quota FMP) déclenche le fallback

@@ -38,7 +38,7 @@ MODE_HELP = {
     "insecure": "Vérification SSL désactivée pour toutes les sources de données. Uniquement sur le réseau "
                 "de confiance de l'entreprise, jamais sur un Wi-Fi public.",
 }
-KIND_LABELS = {"ok": "OK", "ssl": "Certificat", "proxy": "Proxy", "timeout": "Délai",
+KIND_LABELS = {"ok": "OK", "ssl": "Certificat", "proxy": "Bloqué par le proxy", "timeout": "Délai",
                "blocked": "Filtré", "dns": "DNS", "error": "Erreur"}
 
 
@@ -150,9 +150,9 @@ def _bundle_ok(network: NetworkSettings) -> bool:
 
 def _render_diagnostic(network: NetworkSettings) -> None:
     session = configure_session(requests.Session(), network.insecure_ssl, network.ca_bundle)
-    with st.spinner("Test de FMP, BCE, Yahoo, Stooq et FRED…"):
+    with st.spinner("Test des sources de données…"):
         try:
-            diag = check_connectivity(session, timeout=8)
+            diag = check_connectivity(session, timeout=8, parallel=True)
         finally:
             session.close()
     st.markdown(diagnostic_html(diag["results"]), unsafe_allow_html=True)
@@ -171,6 +171,8 @@ def diagnostic_html(results: Mapping[str, Mapping[str, Any]]) -> str:
     for name, res in results.items():
         cls = "ok" if res["ok"] else "ko"
         label = KIND_LABELS.get(str(res["kind"]), str(res["kind"]))
+        if res.get("status") and res["kind"] != "ok":
+            label += f' ({res["status"]})'
         latency = f' · {res["latency_ms"]} ms' if res["ok"] else ""
         chips.append(f'<span class="mm-probe {cls}" title="{escape(str(res["message"]))}">'
                      f"<b>{escape(name)}</b> {escape(label)}{latency}</span>")

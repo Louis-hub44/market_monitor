@@ -120,6 +120,81 @@ def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
     for country in ("BUND", "OAT", "BTP", "BONOS"):
         for tenor in ("2Y", "5Y", "10Y", "30Y"):
             assert ref.get(f"{country}_{tenor}").tickers["free"].ticker.startswith("stooq:")
-    assert ref.get("UST_2Y").tickers["free"].ticker == "fred:DGS2"
+    assert ref.get("UST_2Y").tickers["free"].ticker == "fred:DGS2|2YY=F"
+    assert "|bbk:BBSIS/" in ref.get("BUND_10Y").tickers["free"].ticker
     assert ref.get("V2X").tickers["free"].ticker == "stoxx:v2tx"
     assert ref.get("SX86P").tickers["free"].proxy
+
+
+# ------------------------------------------------------------ chains, breaker
+class CountingClient:
+    def __init__(self, result):
+        self.result, self.calls = result, 0
+
+    def fetch(self, key, start, end):
+        self.calls += 1
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def _series(*values):
+    import pandas as pd
+    return pd.Series(values, index=pd.to_datetime(["2026-10-01", "2026-10-02"][:len(values)]))
+
+
+def test_chain_falls_back_and_warns():
+    from market_monitor.exceptions import ProviderUnavailableError
+
+    stooq = CountingClient(ProviderUnavailableError("Stooq unreachable (ReadTimeout)"))
+    bbk = CountingClient(_series(2.61, 2.63))
+    provider = FreeProvider(ECBClient(session=FakeSession([])), YahooClient(lambda *a: None),
+                            sources={"stooq:": stooq, "bbk:": bbk})
+    ticker = "stooq:10dey.b|bbk:BBSIS/X"
+    result = provider.get_history(ticker, START, END)
+    assert result.data[ticker].tolist() == [2.61, 2.63]
+    assert "bbk:BBSIS/X" in result.warnings[ticker] and "ReadTimeout" in result.warnings[ticker]
+
+
+def test_chain_reports_every_failure_and_yahoo_alternative():
+    stooq = CountingClient(_series())
+    provider = FreeProvider(ECBClient(session=FakeSession([])), YahooClient(lambda *a: None),
+                            sources={"stooq:": stooq})
+    result = provider.get_history("stooq:x|2YY=F", START, END)
+    assert "stooq:x: no data returned" in result.errors["stooq:x|2YY=F"]
+    assert "2YY=F" in result.errors["stooq:x|2YY=F"]
+
+
+def test_unreachable_source_is_skipped_until_the_ttl_expires():
+    from market_monitor.exceptions import ProviderUnavailableError
+
+    now = [0.0]
+    stooq = CountingClient(ProviderUnavailableError("Stooq unreachable (ConnectTimeout)"))
+    provider = FreeProvider(ECBClient(session=FakeSession([])), YahooClient(lambda *a: None),
+                            sources={"stooq:": stooq}, down_ttl_s=60, clock=lambda: now[0])
+    result = provider.get_history(["stooq:a", "stooq:b", "stooq:c"], START, END)
+    assert stooq.calls == 1  # one timeout, not three
+    assert "skipped" in result.errors["stooq:b"]
+    now[0] = 61
+    provider.get_history("stooq:a", START, END)
+    assert stooq.calls == 2
+
+
+def test_ecb_search_lists_series():
+    text = ("KEY,FREQ,TITLE,TIME_PERIOD,OBS_VALUE\n"
+            "FM.D.DE.EUR.4F.BB.DE10YT_RR.YLD,D,Germany 10Y,2026-10-02,2.70\n")
+    found = ECBClient(session=FakeSession([FakeResponse(200, text=text)])).search("FM", "D.DE....YLD")
+    assert found.loc[0, "KEY"] == "FM.D.DE.EUR.4F.BB.DE10YT_RR.YLD" and found.loc[0, "OBS_VALUE"] == 2.70
+    assert ECBClient(session=FakeSession([FakeResponse(404)])).search("FM", "x").empty
+
+
+def test_cli_ecb_series(monkeypatch, capsys):
+    import pandas as pd
+
+    from market_monitor.cli import main
+
+    frame = pd.DataFrame({"KEY": ["FM.D.FR.EUR.4F.BB.FR10YT_RR.YLD"], "TITLE": ["France 10Y"],
+                          "TIME_PERIOD": ["2026-10-02"], "OBS_VALUE": [3.1]})
+    monkeypatch.setattr(ECBClient, "search", lambda self, flow, pattern: frame)
+    assert main(["--config", str(REPO_CONFIG), "ecb-series", "FM", "D.FR....YLD"]) == 0
+    assert "ecb:FM/D.FR.EUR.4F.BB.FR10YT_RR.YLD  2026-10-02 = 3.1  France 10Y" in capsys.readouterr().out

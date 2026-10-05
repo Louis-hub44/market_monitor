@@ -9,6 +9,7 @@
     market-monitor snapshot --provider fmp --tickers ^GSPC EURUSD
     market-monitor check-referential
     market-monitor cache-clear [--provider fmp]
+    market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"   # cherche des séries BCE
 
 Exit codes: 0 OK, 1 data missing, 2 configuration / usage error, 3 alert threshold hit.
 """
@@ -34,7 +35,8 @@ from market_monitor.config import (
     load_settings,
 )
 from market_monitor.data.cache import ParquetCache
-from market_monitor.data.factory import build_provider, with_cache
+from market_monitor.data.factory import build_provider, rest_session, with_cache
+from market_monitor.data.providers.free import ECBClient
 from market_monitor.doctor import run_checks
 from market_monitor.exceptions import MarketMonitorError
 from market_monitor.export import export_daily_macro, load_layout
@@ -74,6 +76,9 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--start", default=(date.today() - timedelta(days=30)).isoformat())
     fetch.add_argument("--end", default=date.today().isoformat())
     fetch.add_argument("--no-cache", action="store_true")
+    ecb = sub.add_parser("ecb-series", help="list ECB series matching a key pattern")
+    ecb.add_argument("flow", help="dataflow, e.g. FM, YC, IRS")
+    ecb.add_argument("pattern", help="key with wildcards, e.g. D.DE+FR+IT+ES....YLD")
     clear = sub.add_parser("cache-clear", help="delete the local parquet cache")
     clear.add_argument("--provider", choices=KNOWN_PROVIDERS)
     return parser
@@ -151,10 +156,24 @@ def _cache_clear(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _ecb_series(settings: Settings, args: argparse.Namespace) -> int:
+    client = ECBClient(settings.free.ecb_base_url, timeout_s=settings.free.timeout_s,
+                       session=rest_session(settings))
+    found = client.search(args.flow, args.pattern)
+    if found.empty:
+        print("aucune série")
+        return EXIT_MISSING_DATA
+    for _, row in found.iterrows():
+        title = f"  {row['TITLE']}" if "TITLE" in row and pd.notna(row["TITLE"]) else ""
+        print(f"ecb:{args.flow}/{str(row['KEY']).split('.', 1)[1]}  "
+              f"{row.get('TIME_PERIOD', '')} = {row.get('OBS_VALUE', '')}{title}")
+    return EXIT_OK
+
+
 COMMANDS: dict[str, Command] = {
     "doctor": _doctor, "check-referential": _check_referential, "perf": _perf,
     "daily-macro": _daily_macro, "alerts": _alerts, "fetch": _raw, "snapshot": _raw,
-    "cache-clear": _cache_clear,
+    "cache-clear": _cache_clear, "ecb-series": _ecb_series,
 }
 
 

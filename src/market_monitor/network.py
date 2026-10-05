@@ -36,6 +36,7 @@ import logging
 import os
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests
@@ -52,13 +53,22 @@ CHROME_USER_AGENT = (
 
 #: One probe per source, to tell a global failure (proxy, firewall) from a
 #: single provider being down.
+#: A 401 (no API key / cookie sent by the probe) still proves the host is reachable.
 PROBES: dict[str, str] = {
     "FMP": "https://financialmodelingprep.com/stable/profile?symbol=AAPL",
     "ECB": "https://data-api.ecb.europa.eu/service/dataflow/ECB/EST",
-    "YAHOO": "https://query2.finance.yahoo.com/v1/test/getcrumb",
+    "YAHOO": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d",
     "STOOQ": "https://stooq.com/q/d/l/?s=10dey.b&i=d",
+    "BUNDESBANK": "https://api.statistiken.bundesbank.de/rest/data/BBSIS/"
+                  "D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A?lastNObservations=1",
     "FRED": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2",
+    "STOXX": "https://www.stoxx.com/document/Indices/Current/HistoricalData/h_v2tx.txt",
 }
+
+#: Fragments of the block pages served by corporate web proxies.
+PROXY_BLOCK_MARKERS = ("zscaler", "netskope", "forcepoint", "bluecoat", "fortiguard",
+                       "websense", "access denied", "site blocked", "this site is blocked",
+                       "url filtering", "web filter")
 
 #: Fragments that unambiguously identify a certificate-validation failure.
 SSL_ERROR_MARKERS = (
@@ -232,6 +242,12 @@ def looks_like_ssl_error(message: Any) -> bool:
     return any(marker in text for marker in SSL_ERROR_MARKERS)
 
 
+def looks_like_proxy_block(body: Any) -> bool:
+    """True when a response body is a corporate proxy's block page."""
+    text = str(body or "")[:5000].lower()
+    return "<html" in text and any(marker in text for marker in PROXY_BLOCK_MARKERS)
+
+
 def count_ssl_failures(failures: Mapping[str, str]) -> int:
     """Number of certificate failures among ``{ticker: reason}`` errors."""
     return sum(1 for reason in failures.values() if looks_like_ssl_error(reason))
@@ -260,12 +276,24 @@ def check_endpoint(url: str, session: Any = None, timeout: float = 12) -> dict[s
     try:
         response = session.get(url, timeout=timeout)
         latency = round((time.perf_counter() - started) * 1000)
-        if response.status_code in (401, 403):
+        status = response.status_code
+        if looks_like_proxy_block(getattr(response, "text", "")):
             return {
-                "ok": False, "status": response.status_code, "latency_ms": latency,
-                "kind": "blocked",
-                "message": f"le serveur répond {response.status_code} (authentification ou filtrage)",
-                "hint": "Le réseau atteint bien la source : clé API ou filtrage applicatif, pas le proxy.",
+                "ok": False, "status": status, "latency_ms": latency, "kind": "proxy",
+                "message": f"page de blocage du proxy d'entreprise (HTTP {status})",
+                "hint": "Le site est filtré par le proxy : demandez son ouverture à l'informatique.",
+            }
+        if status == 401:
+            return {
+                "ok": True, "status": 401, "latency_ms": latency, "kind": "ok",
+                "message": f"joignable en {latency} ms (HTTP 401 : clé ou cookie requis)",
+                "hint": "",
+            }
+        if status == 403:
+            return {
+                "ok": False, "status": 403, "latency_ms": latency, "kind": "blocked",
+                "message": "le serveur répond 403 (accès refusé)",
+                "hint": "Le réseau atteint la source mais l'accès est refusé (filtrage ou clé).",
             }
         if response.status_code == 429:
             return {
@@ -303,7 +331,11 @@ def check_endpoint(url: str, session: Any = None, timeout: float = 12) -> dict[s
 
 
 def check_connectivity(
-    session: Any = None, timeout: float = 12, probes: Mapping[str, str] | None = None
+    session: Any = None,
+    timeout: float = 12,
+    probes: Mapping[str, str] | None = None,
+    *,
+    parallel: bool = False,
 ) -> dict[str, Any]:
     """Probe every source and summarise the diagnostic.
 
@@ -313,7 +345,13 @@ def check_connectivity(
         certificate, the diagnostic points at the proxy, not at the providers.
     """
     probes = PROBES if probes is None else probes
-    results = {name: check_endpoint(url, session, timeout) for name, url in probes.items()}
+    if parallel:  # firewalled hosts time out together instead of one after the other
+        with ThreadPoolExecutor(max_workers=len(probes) or 1) as pool:
+            futures = {name: pool.submit(check_endpoint, url, session, timeout)
+                       for name, url in probes.items()}
+            results = {name: future.result() for name, future in futures.items()}
+    else:
+        results = {name: check_endpoint(url, session, timeout) for name, url in probes.items()}
     kinds = [r["kind"] for r in results.values()]
     ssl_blocked = bool(kinds) and all(k == "ssl" for k in kinds)
 
