@@ -94,6 +94,7 @@ class UiSettings:
     heatmap_columns: int = 8          # tiles per row in the heatmap
     zscore_clip: float = 3.0          # colour saturation at |z| = clip
     top_movers: int = 6
+    network_gate: bool = True         # start screen: no data request before "Lancer"
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,7 @@ def settings_from_dict(
             heatmap_columns=_int(ui, "heatmap_columns", 8, low=2, high=20),
             zscore_clip=_float(ui, "zscore_clip", 3.0),
             top_movers=_int(ui, "top_movers", 6, low=0, high=20),
+            network_gate=bool(ui.get("network_gate", True)),
         ),
         daily_macro_path=_path(export.get("layout", "daily_macro.yaml"), base_dir),
         alerts_path=_path(_section(raw, "alerts").get("rules", "alerts.yaml"), base_dir),

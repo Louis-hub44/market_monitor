@@ -144,3 +144,30 @@ def test_doctor_reports_network(tmp_path, ca_file):
     raw["network"] = {"ca_bundle": "missing.pem"}
     checks = {c.name: c for c in run_checks(settings_from_dict(raw, base_dir=tmp_path, env={}))}
     assert not checks["Réseau"].ok and "introuvable" in checks["Réseau"].detail
+
+
+# ------------------------------------------------------------------ start screen
+def test_network_view_helpers(ca_file):
+    from market_monitor.config import NetworkSettings
+    from market_monitor.ui.network_view import diagnostic_html, mode_of, network_from, status_label
+
+    assert network_from("ca", f' "{ca_file}" ') == NetworkSettings(ca_bundle=ca_file)
+    assert network_from("insecure", "ignored") == NetworkSettings(insecure_ssl=True)
+    assert network_from("standard", "") == NetworkSettings()
+    for mode in ("ca", "insecure", "standard"):
+        assert mode_of(network_from(mode, str(ca_file))) == mode
+    assert status_label(NetworkSettings(insecure_ssl=True)) == "SSL contourné"
+    assert "corporate.pem" in status_label(NetworkSettings(ca_bundle=ca_file))
+
+    html = diagnostic_html({
+        "FMP": {"ok": True, "kind": "ok", "latency_ms": 42, "message": "fine"},
+        "YAHOO": {"ok": False, "kind": "ssl", "latency_ms": 3, "message": "<cert>"},
+    })
+    assert 'class="mm-probe ok"' in html and "42 ms" in html
+    assert 'class="mm-probe ko"' in html and "Certificat" in html and "&lt;cert&gt;" in html
+
+
+def test_settings_network_gate_flag(tmp_path):
+    assert settings_from_dict({}, base_dir=tmp_path, env={}).ui.network_gate
+    raw = {"ui": {"network_gate": False}}
+    assert not settings_from_dict(raw, base_dir=tmp_path, env={}).ui.network_gate

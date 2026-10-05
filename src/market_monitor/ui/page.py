@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from html import escape
 from typing import Any
@@ -42,6 +43,12 @@ from market_monitor.ui.formatting import (
     style_table,
 )
 from market_monitor.ui.history_view import render_history
+from market_monitor.ui.network_view import (
+    render_network_gate,
+    render_network_sidebar,
+    render_ssl_rescue,
+    status_label,
+)
 
 FULL_WIDTH_ROWS = 8   # classes with more rows than this get the full page width
 ROW_HEIGHT_PX = 35
@@ -54,10 +61,14 @@ VIEWS = {"overview": "Vue d'ensemble", "history": "Historique", "correlations": 
 
 def render_market_monitor(monitor: MarketMonitor, ui: UiSettings, *, key: str = "mm",
                           layout: DailyMacroLayout | None = None,
-                          rules: Sequence[AlertRule] | None = None) -> None:
-    """Draw the dashboard for ``monitor`` in the current Streamlit container."""
+                          rules: Sequence[AlertRule] | None = None,
+                          status: str | None = None) -> None:
+    """Draw the dashboard for ``monitor`` in the current Streamlit container.
+
+    ``status`` (e.g. the network mode) is shown as a chip in the top bar.
+    """
     watchlist, as_of = _sidebar(monitor, ui, key)
-    st.markdown('<div class="mm-title">Market Monitor</div>', unsafe_allow_html=True)
+    _topbar(monitor, status)
     view = st.segmented_control("Vue", list(VIEWS), default="overview", required=True,
                                 format_func=lambda v: VIEWS[v], label_visibility="collapsed",
                                 key=f"{key}-view") or "overview"
@@ -78,6 +89,7 @@ def _overview(monitor: MarketMonitor, ui: UiSettings, watchlist: str, as_of: dat
     report = _load_report(monitor, watchlist, as_of, ui, key)
     if report is None:
         return
+    render_ssl_rescue(report.errors, key)
     _header(report)
     alerts_strip(load_alerts(monitor, rules, ui, as_of, key))
     if report.table["level"].isna().all():
@@ -99,18 +111,32 @@ def _overview(monitor: MarketMonitor, ui: UiSettings, watchlist: str, as_of: dat
 
 def main() -> None:
     """Standalone app: ``streamlit run app.py``."""
-    st.set_page_config(page_title="Market Monitor", layout="wide")
+    st.set_page_config(page_title="Market Monitor", page_icon=":material/monitoring:", layout="wide")
     st.markdown(theme.page_css(), unsafe_allow_html=True)
     try:
         settings = _settings()
         configure_logging(settings)
-        monitor = _monitor(settings)
+    except MarketMonitorError as exc:
+        st.error(f"Configuration invalide : {exc}")
+        st.stop()
+    network = settings.network
+    if settings.ui.network_gate:
+        chosen = render_network_gate(settings)
+        if chosen is None:  # start screen: nothing is fetched before "Lancer"
+            st.stop()
+        network = chosen
+        settings = replace(settings, network=network)
+    try:
+        monitor = _monitor(settings, network.insecure_ssl, str(network.ca_bundle or ""))
         layout = _layout(settings, monitor)
         rules = _rules(settings, monitor)
     except MarketMonitorError as exc:
         st.error(f"Configuration invalide : {exc}")
         st.stop()
-    render_market_monitor(monitor, settings.ui, layout=layout, rules=rules)
+    render_market_monitor(monitor, settings.ui, layout=layout, rules=rules,
+                          status=status_label(network))
+    if settings.ui.network_gate:
+        render_network_sidebar(network)
 
 
 # ===================================================================== loading
@@ -120,7 +146,8 @@ def _settings() -> Settings:
 
 
 @st.cache_resource(show_spinner="Connexion aux sources de données…")
-def _monitor(_settings: Settings) -> MarketMonitor:
+def _monitor(_settings: Settings, insecure_ssl: bool, ca_bundle: str) -> MarketMonitor:
+    """One monitor per network policy (the two plain arguments are the cache key)."""
     return MarketMonitor.from_settings(_settings)
 
 
@@ -159,6 +186,7 @@ def _sidebar(monitor: MarketMonitor, ui: UiSettings, key: str) -> tuple[str, dat
     names = list(ref.watchlist_names) or ["*"]
     default = names.index(ui.default_watchlist) if ui.default_watchlist in names else 0
     with st.sidebar:
+        st.markdown('<div class="mm-side-title">Sélection</div>', unsafe_allow_html=True)
         watchlist = st.selectbox(
             "Watchlist", names, index=default, key=f"{key}-watchlist",
             format_func=lambda n: ref.watchlist(n).description or n if n in ref.watchlist_names else n,
@@ -166,7 +194,8 @@ def _sidebar(monitor: MarketMonitor, ui: UiSettings, key: str) -> tuple[str, dat
         today = monitor.today()
         as_of = st.date_input("Date d'arrêté", value=today, max_value=today, format="DD/MM/YYYY",
                               key=f"{key}-asof")
-        if st.button("Actualiser les données", key=f"{key}-refresh"):
+        if st.button("Actualiser les données", icon=":material/refresh:", type="primary",
+                     width="stretch", key=f"{key}-refresh"):
             bump_refresh_nonce(key)
         chain = ", ".join(SOURCE_LABELS.get(n, n) for n in monitor.service.provider_names)
         st.caption(f"Sources par ordre de priorité : {chain}.")
@@ -174,14 +203,33 @@ def _sidebar(monitor: MarketMonitor, ui: UiSettings, key: str) -> tuple[str, dat
 
 
 # ====================================================================== blocks
+def _topbar(monitor: MarketMonitor, status: str | None) -> None:
+    chain = " › ".join(SOURCE_LABELS.get(n, n) for n in monitor.service.provider_names)
+    chips = f'<span class="mm-chip">{escape(chain)}</span>'
+    if status:
+        cls = "warn" if status.startswith("SSL") else "ok"
+        chips += f'<span class="mm-chip {cls}">{escape(status)}</span>'
+    st.markdown(
+        '<div class="mm-topbar"><div><div class="mm-title">Market Monitor</div>'
+        '<div class="mm-tagline">Écran multi-actifs · actions, taux, change, matières premières</div>'
+        f'</div><div class="mm-chips">{chips}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _header(report: PerformanceReport) -> None:
     table = report.table
     last = table["level_date"].max()
     stale = int(table["stale"].sum())
-    sentence = f"Arrêté au {french_date(report.as_of)}. {len(table)} instruments"
-    if pd.notna(last):
-        sentence += f", dernière cotation le {short_date(last)}"
-    st.markdown(f'<div class="mm-asof">{escape(sentence)}.</div>', unsafe_allow_html=True)
+    tiles = [
+        ("Arrêté au", french_date(report.as_of), ""),
+        ("Instruments", str(len(table)), ""),
+        ("Dernière cotation", short_date(last) if pd.notna(last) else "–", ""),
+        ("Sans cotation récente", str(stale), "warn" if stale else ""),
+    ]
+    html = "".join(f'<div class="mm-kpi {cls}"><div class="lbl">{escape(label)}</div>'
+                   f'<div class="val">{escape(value)}</div></div>' for label, value, cls in tiles)
+    st.markdown(f'<div class="mm-kpis">{html}</div>', unsafe_allow_html=True)
     if stale:
         st.caption(f"{stale} ligne(s) sans cotation récente, affichées en grisé.")
 
@@ -199,7 +247,8 @@ def _movers(report: PerformanceReport, ui: UiSettings) -> None:
             f'<span class="chg" style="color:{color}">{change}</span>'
             f'<span class="z">z {fr_number(row["z_1d"], 1, sign=True)}</span></span>'
         )
-    st.markdown("**Mouvements marquants sur la séance**", unsafe_allow_html=False)
+    st.markdown('<div class="mm-section">Mouvements marquants sur la séance</div>',
+                unsafe_allow_html=True)
     st.markdown(f'<div class="mm-movers">{"".join(items)}</div>', unsafe_allow_html=True)
 
 

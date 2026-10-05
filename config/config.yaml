@@ -56,6 +56,7 @@ ui:
   heatmap_columns: 8              # tuiles par ligne
   zscore_clip: 3.0                # saturation des couleurs à |z| = 3
   top_movers: 6                   # nombre de mouvements marquants affichés
+  network_gate: true              # écran de connexion (SSL) avant tout chargement ; false = chargement direct
 
 export:                           # chemins relatifs à ce fichier
   layout: daily_macro.yaml        # bandeaux, colonnes, règles des mouvements marquants

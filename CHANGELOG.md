@@ -1,6 +1,16 @@
 # Historique des versions
 
-## Non publié
+## 1.1.0 — connexion réseau et interface
+- Écran *Connexion réseau* au lancement du dashboard : aucune donnée n'est chargée avant
+  *Lancer le chargement* ; modes standard / certificat d'entreprise / contournement SSL,
+  bouton *Tester la connexion* (FMP, BCE, Yahoo). Désactivable par `ui.network_gate: false`.
+- Barre latérale : mode de connexion actif et bouton *Changer la connexion* ; bandeau
+  *Contourner le SSL* quand la plupart des séries échouent sur le certificat.
+- Interface retravaillée : barre de titre avec puces d'état, tuiles d'en-tête, mouvements
+  marquants en cartes, titres de section soulignés, tableaux encadrés, chrome Streamlit allégé.
+- `.streamlit/config.toml`, `.gitignore` et `.env.example` versionnés.
+
+## 1.0.1 — proxy d'entreprise
 - Contournement des proxys d'inspection SSL d'entreprise (`market_monitor.network`) : section
   `network` de `config.yaml` (`ca_bundle`, `insecure_ssl`) et variables
   `MARKET_MONITOR_CA_BUNDLE` / `MARKET_MONITOR_INSECURE_SSL`, appliquées à FMP, à la BCE et à

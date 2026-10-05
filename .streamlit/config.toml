@@ -1,0 +1,17 @@
+# Thème du Market Monitor (lancer streamlit depuis la racine du projet)
+[theme]
+base = "dark"
+primaryColor = "#F0A830"
+backgroundColor = "#131E28"
+secondaryBackgroundColor = "#1B2835"
+textColor = "#E3E9EF"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

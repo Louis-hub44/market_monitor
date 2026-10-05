@@ -159,6 +159,16 @@ configurée (`src/market_monitor/network.py`) ; yfinance perd alors son empreint
 `market-monitor doctor --online` affiche la configuration réseau, sonde FMP, BCE et Yahoo et
 désigne le proxy quand toutes les sources échouent sur le certificat.
 
+**Depuis le dashboard** : au lancement, un écran *Connexion réseau* s'affiche **avant tout
+chargement** — aucune requête ne part tant que vous n'avez pas cliqué sur *Lancer le
+chargement*. Trois modes : *Connexion standard*, *Certificat d'entreprise* (chemin du
+fichier, pré-rempli avec les certificats trouvés sur le poste) et *Contourner le SSL*.
+*Tester la connexion* sonde FMP, la BCE et Yahoo et qualifie chaque échec. Le mode actif
+reste affiché dans la barre du haut et dans la barre latérale (*Changer la connexion*) ; si
+la plupart des séries échouent sur le certificat, un bandeau propose *Contourner le SSL* en
+un clic. `ui.network_gate: false` dans `config.yaml` supprime l'écran et applique directement
+la section `network` (usage à la maison).
+
 ## 5. Données
 
 ### 5.1 Providers et tickers natifs
@@ -338,7 +348,8 @@ market-monitor ui              # ou : streamlit run app.py (depuis la racine, po
 Cinq vues, choisies sous le titre : **Vue d'ensemble**, **Historique**, **Corrélations** (§ 9), **Alertes** (§ 11), **Daily macro** (§ 10).
 La vue d'ensemble, de haut en bas :
 
-1. **En-tête** : date d'arrêté en clair, nombre d'instruments, date de la dernière cotation.
+1. **En-tête** : barre de titre (chaîne de sources, mode de connexion) puis quatre tuiles —
+   date d'arrêté, nombre d'instruments, dernière cotation, lignes sans cotation récente.
 2. **Mouvements marquants** : les plus fortes variations de la séance classées par $|z_{1J}|$
    (lignes périmées exclues), la base de la daily macro.
 3. **Heatmap** : une tuile par instrument, groupées par classe d'actifs, colorées par le

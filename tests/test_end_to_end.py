@@ -57,6 +57,14 @@ def test_real_main_page_with_repository_config():
     at = AppTest.from_file(str(Path(__file__).with_name("ui_main_app.py")), default_timeout=90)
     at.run()
     assert not at.exception, at.exception
+    # start screen: nothing is loaded before "Lancer le chargement"
+    assert "Choisissez la connexion" in " ".join(m.value for m in at.markdown)
+    assert not at.dataframe
+    at.segmented_control(key="mm-net-mode").set_value("insecure").run()
+    at.button(key="mm-net-start").click().run()
+    assert not at.exception, at.exception
+    assert "SSL contourné" in " ".join(m.value for m in at.markdown)
+    assert at.dataframe
     for view in ("history", "correlations", "alerts", "daily"):
         at.segmented_control(key="mm-view").set_value(view).run()
         assert not at.exception, (view, at.exception)
@@ -145,3 +153,14 @@ def test_doctor_online_probe(monkeypatch, tmp_path):
     checks = {c.name: c for c in run_checks(settings, online=True)}
     assert checks["Provider free"].ok and "ecb:EST" in checks["Provider free"].detail
     assert not checks["Provider fmp"].ok and "^GSPC" in checks["Provider fmp"].detail
+
+
+def test_main_page_change_connection_returns_to_start_screen():
+    at = AppTest.from_file(str(Path(__file__).with_name("ui_main_app.py")), default_timeout=90)
+    at.run()
+    at.segmented_control(key="mm-net-mode").set_value("standard").run()
+    at.button(key="mm-net-start").click().run()
+    assert "Connexion standard" in " ".join(m.value for m in at.markdown)
+    at.sidebar.button(key="mm-net-change").click().run()
+    assert not at.exception, at.exception
+    assert "Choisissez la connexion" in " ".join(m.value for m in at.markdown)

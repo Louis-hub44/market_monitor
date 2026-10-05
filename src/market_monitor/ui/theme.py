@@ -67,24 +67,83 @@ def plotly_colorscale(steps: int = 11) -> list[list[float | str]]:
 
 
 def page_css() -> str:
-    """Global CSS injected once per page (font, tabular figures, compact tables)."""
+    """Global CSS injected once per page (font, tabular figures, cards, sidebar, start screen)."""
     return f"""
 <style>
 @import url('{FONT_URL}');
 html, body, [class*="st-"], .stMarkdown, .stDataFrame {{ font-family: {FONT_FAMILY}; }}
 [data-testid="stDataFrame"] {{ font-variant-numeric: tabular-nums; }}
-.stMarkdown div.mm-title {{ color: {ACCENT}; font-size: 2.1rem; font-weight: 600; line-height: 1.1;
+/* keep Streamlit's icon font (ligatures) despite the global font override above */
+[data-testid="stIconMaterial"], span[class*="material-symbols"] {{
+    font-family: "Material Symbols Rounded" !important; }}
+
+/* ---- chrome: quieter Streamlit frame, tighter page */
+#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stAppDeployButton"] {{
+    visibility: hidden; }}
+[data-testid="stHeader"] {{ background: transparent; }}
+.block-container {{ padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1600px; }}
+[data-testid="stSidebar"] {{ background: {PANEL}; border-right: 1px solid {RULE}; }}
+.mm-side-title {{ color: {MUTED}; font-size: .72rem; font-weight: 600; letter-spacing: .12em;
+                  text-transform: uppercase; margin: .8rem 0 .4rem 0; }}
+
+/* ---- top bar */
+.mm-topbar {{ display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap;
+              gap: .8rem; padding-bottom: .8rem; margin-bottom: 1rem; border-bottom: 1px solid {RULE}; }}
+.stMarkdown div.mm-title {{ color: {ACCENT}; font-size: 2.1rem; font-weight: 600; line-height: 1.05;
                            margin: 0; letter-spacing: .01em; }}
+.mm-tagline {{ color: {MUTED}; font-size: .92rem; margin-top: .2rem; }}
+.mm-chips {{ display: flex; flex-wrap: wrap; gap: .4rem; }}
+.mm-chip {{ display: inline-block; padding: .18rem .65rem; border-radius: 999px; font-size: .8rem;
+            border: 1px solid {RULE}; background: {BACKGROUND}; color: {MUTED}; white-space: nowrap; }}
+.mm-chip.ok {{ color: {UP}; border-color: {blend(RULE, UP, .5)}; }}
+.mm-chip.warn {{ color: {ACCENT}; border-color: {blend(RULE, ACCENT, .5)}; }}
+
+/* ---- KPI tiles */
+.mm-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .7rem;
+            margin: .2rem 0 1rem 0; }}
+.mm-kpi {{ background: {PANEL}; border: 1px solid {RULE}; border-radius: 10px; padding: .6rem .9rem; }}
+.mm-kpi .lbl {{ color: {MUTED}; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; }}
+.mm-kpi .val {{ color: {TEXT}; font-size: 1.2rem; font-weight: 600; margin-top: .15rem;
+                font-variant-numeric: tabular-nums; }}
+.mm-kpi.warn .val {{ color: {ACCENT}; }}
 .stMarkdown div.mm-asof {{ color: {MUTED}; font-size: 1rem; margin: .25rem 0 .8rem 0; }}
-.mm-movers {{ display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: .2rem 0 1.2rem 0;
-              padding: .7rem 0; border-top: 1px solid {RULE}; border-bottom: 1px solid {RULE}; }}
-.mm-mover {{ font-variant-numeric: tabular-nums; white-space: nowrap; }}
+
+/* ---- movers */
+.mm-section {{ color: {TEXT}; font-weight: 600; font-size: 1.02rem; margin: .6rem 0 .4rem 0;
+               padding-left: .55rem; border-left: 3px solid {ACCENT}; }}
+.mm-movers {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: .2rem 0 1.2rem 0; }}
+.mm-mover {{ font-variant-numeric: tabular-nums; white-space: nowrap; background: {PANEL};
+             border: 1px solid {RULE}; border-radius: 8px; padding: .4rem .75rem; }}
 .mm-mover .name {{ color: {TEXT}; font-weight: 500; }}
-.mm-mover .chg {{ font-weight: 600; margin-left: .35rem; }}
-.mm-mover .z {{ color: {MUTED}; margin-left: .35rem; }}
+.mm-mover .chg {{ font-weight: 600; margin-left: .45rem; }}
+.mm-mover .z {{ color: {MUTED}; margin-left: .45rem; font-size: .88rem; }}
+
+/* ---- alerts, tables */
 .mm-alert {{ border-left: 3px solid; padding: .15rem 0 .15rem .6rem; margin: .25rem 0; }}
 .mm-alert .sev {{ font-weight: 600; margin-right: .5rem; }}
-h3.mm-class {{ font-size: 1.05rem; color: {TEXT}; font-weight: 600; margin: 1rem 0 .3rem 0; }}
+h3.mm-class {{ font-size: 1.02rem; color: {TEXT}; font-weight: 600; margin: 1.1rem 0 .35rem 0;
+               padding-left: .55rem; border-left: 3px solid {ACCENT}; }}
+[data-testid="stDataFrame"] {{ border: 1px solid {RULE}; border-radius: 8px; overflow: hidden; }}
+[data-testid="stExpander"] details {{ border-color: {RULE}; border-radius: 10px; background: {PANEL}; }}
+
+/* ---- widgets */
+.stButton button, .stDownloadButton button {{ border-radius: 8px; font-weight: 500; }}
+.stButton button[kind="primary"] {{ color: {BACKGROUND}; }}
+[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 12px; }}
+
+/* ---- start screen */
+.mm-hero {{ text-align: center; margin: 4vh auto 1.6rem auto; max-width: 640px; }}
+.mm-brand {{ color: {ACCENT}; font-size: 2.6rem; font-weight: 600; letter-spacing: .01em; }}
+.mm-hero-sub {{ color: {MUTED}; font-size: 1.02rem; margin-top: .4rem; line-height: 1.5; }}
+.mm-hero-sub b {{ color: {TEXT}; }}
+.mm-card-title {{ color: {TEXT}; font-weight: 600; font-size: 1.1rem; margin-bottom: .4rem; }}
+.mm-probes {{ display: flex; flex-wrap: wrap; gap: .45rem; margin: .6rem 0; }}
+.mm-probe {{ border-radius: 8px; padding: .3rem .7rem; font-size: .86rem; border: 1px solid {RULE};
+             background: {BACKGROUND}; }}
+.mm-probe.ok {{ color: {UP}; border-color: {blend(RULE, UP, .5)}; }}
+.mm-probe.ko {{ color: {DOWN}; border-color: {blend(RULE, DOWN, .5)}; }}
+.mm-probe b {{ color: {TEXT}; margin-right: .3rem; }}
+
 @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; animation: none !important; }} }}
 </style>
 """
