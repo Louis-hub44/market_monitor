@@ -45,9 +45,10 @@ def render_correlations(monitor: MarketMonitor, ui: UiSettings, watchlist: str, 
                         key: str) -> None:
     ref = monitor.referential
     basket = DEFAULT_BASKET if DEFAULT_BASKET in ref.watchlist_names else watchlist
-    default = list(ref.resolve(ref.watchlist(basket).instruments))[:MAX_INSTRUMENTS]
+    default = list(monitor.available(ref.resolve(ref.watchlist(basket).instruments)))[:MAX_INSTRUMENTS]
     ids = st.multiselect(
-        "Instruments", options=list(ref.ids), default=default, max_selections=MAX_INSTRUMENTS,
+        "Instruments", options=list(monitor.available(ref.ids)), default=default,
+        max_selections=MAX_INSTRUMENTS,
         format_func=lambda i: ref.get(i).name, key=f"{key}-corr-ids",
     )
     c1, c2, c3, c4 = st.columns(4)

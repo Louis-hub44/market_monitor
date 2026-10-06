@@ -85,11 +85,26 @@ class MarketMonitor:
         """Current date in the market time zone."""
         return datetime.now(self._tz).date()
 
+    def is_available(self, instrument_id: str) -> bool:
+        """True when an active provider has a ticker for it (all legs, for a derived one).
+
+        Without Bloomberg, Bloomberg-only lines (iTraxx...) are therefore hidden instead of
+        being reported as missing; they come back as soon as Bloomberg is reachable.
+        """
+        inst = self._referential.get(instrument_id)
+        if inst.derived:
+            return all(self.is_available(leg) for leg, _ in inst.derived.legs)
+        return any(name in inst.tickers for name in self._service.provider_names)
+
+    def available(self, ids: Iterable[str]) -> tuple[str, ...]:
+        """``ids`` without the instruments no active provider can serve (order kept)."""
+        return tuple(i for i in ids if self.is_available(i))
+
     def select(self, watchlist: str | None = None, ids: Iterable[str] | None = None) -> tuple[str, ...]:
-        """Instrument ids from a watchlist and/or explicit selectors."""
+        """Available instrument ids from a watchlist and/or explicit selectors."""
         entries: list[str] = list(self._referential.watchlist(watchlist).instruments) if watchlist else []
         entries.extend(ids or [])
-        return self._referential.resolve(entries or ["*"])
+        return self.available(self._referential.resolve(entries or ["*"]))
 
     def history(self, ids: Iterable[str], start: DateLike, end: DateLike) -> UniverseHistory:
         """Harmonised levels (referential units) for ``ids``."""
@@ -121,7 +136,7 @@ class MarketMonitor:
         """Rebased histories (base 100 / bp / points) over ``period`` or from ``start``."""
         end = to_date(as_of) if as_of is not None else self.today()
         begin = to_date(start) if start is not None else period_start(period, end)
-        selected = self._referential.resolve(ids)
+        selected = self.available(self._referential.resolve(ids))
         hist = self.history(selected, begin, end)
         result = compare(hist.levels, [self._referential.get(i) for i in selected], begin, end)
         result.errors = {**result.errors, **{k: v for k, v in hist.errors.items() if k in result.errors}}
@@ -141,7 +156,7 @@ class MarketMonitor:
     ) -> CorrelationResult:
         """Correlation matrix at ``as_of``, ``lag`` periods earlier, and ``history`` of returns."""
         end = to_date(as_of) if as_of is not None else self.today()
-        selected = self._referential.resolve(ids)
+        selected = self.available(self._referential.resolve(ids))
         start = corr.required_start(end, window, lag, frequency, history)
         hist = self.history(selected, start, end)
         result = analyse_correlations(

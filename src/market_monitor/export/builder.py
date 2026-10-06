@@ -31,6 +31,11 @@ class DailyMacroData:
     warnings: dict[str, str] = field(default_factory=dict)
 
 
+def _rows(table: pd.DataFrame, ids: Sequence[str]) -> pd.DataFrame:
+    """Rows of ``ids`` present in ``table`` (instruments no active provider serves are absent)."""
+    return table.loc[[i for i in ids if i in table.index]]
+
+
 def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
                       as_of: DateLike | None = None,
                       rules: Sequence[AlertRule] = ()) -> DailyMacroData:
@@ -44,8 +49,8 @@ def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
         as_of=report.as_of,
         title=layout.title,
         columns=layout.columns,
-        sections=[(s.title, table.loc[list(s.instruments)]) for s in layout.sections],
-        movers=select_movers(table.loc[list(layout.movers.universe)], layout.movers),
+        sections=[(s.title, _rows(table, s.instruments)) for s in layout.sections],
+        movers=select_movers(_rows(table, layout.movers.universe), layout.movers),
         universe=table,
         movers_rule=layout.movers,
         alerts=evaluate(rules, table, report.as_of) if rules else None,

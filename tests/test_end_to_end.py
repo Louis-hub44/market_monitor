@@ -164,3 +164,17 @@ def test_main_page_change_connection_returns_to_start_screen():
     at.sidebar.button(key="mm-net-change").click().run()
     assert not at.exception, at.exception
     assert "Choisissez la connexion" in " ".join(m.value for m in at.markdown)
+
+
+def test_bloomberg_only_lines_hidden_without_bloomberg():
+    from market_monitor.data.service import MarketDataService
+
+    ref = load_referential(CONFIG.parent / "instruments.yaml", CONFIG.parent / "watchlists.yaml")
+    no_bbg = MarketMonitor(MarketDataService([FakeProvider("fmp", {}), FakeProvider("free", {})]), ref)
+    assert not no_bbg.is_available("ITRX_MAIN") and not no_bbg.is_available("ITRX_XOVER")
+    assert no_bbg.is_available("OAT_BUND_10Y")  # derived: both legs have a free ticker
+    rates = no_bbg.select("rates")
+    assert "ITRX_MAIN" not in rates and "BUND_10Y" in rates
+    assert "ITRX_XOVER" not in no_bbg.select("cross_asset")
+    with_bbg = MarketMonitor(MarketDataService([FakeProvider("bloomberg", {})]), ref)
+    assert "ITRX_MAIN" in with_bbg.select("rates")

@@ -34,9 +34,10 @@ def _compute(_monitor: MarketMonitor, monitor_id: int, ids: tuple[str, ...], per
 
 def render_history(monitor: MarketMonitor, ui: UiSettings, watchlist: str, as_of: date, key: str) -> None:
     ref = monitor.referential
-    default = list(ref.resolve(ref.watchlist(watchlist).instruments))[:DEFAULT_SERIES]
+    default = list(monitor.available(ref.resolve(ref.watchlist(watchlist).instruments)))[:DEFAULT_SERIES]
     ids = st.multiselect(
-        "Instruments à comparer", options=list(ref.ids), default=default, max_selections=MAX_SERIES,
+        "Instruments à comparer", options=list(monitor.available(ref.ids)), default=default,
+        max_selections=MAX_SERIES,
         format_func=lambda i: ref.get(i).name, key=f"{key}-hist-ids",
     )
     period = st.segmented_control("Période", PERIODS, default="1A", required=True,

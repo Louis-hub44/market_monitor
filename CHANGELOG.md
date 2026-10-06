@@ -1,5 +1,10 @@
 # Historique des versions
 
+## 1.2.3 — lignes Bloomberg seules masquées
+- Un instrument qu'aucun provider actif ne sert (iTraxx sans Bloomberg) est retiré des
+  watchlists, de l'historique, des corrélations, de l'export daily macro et des alertes ; il
+  réapparaît automatiquement avec Bloomberg.
+
 ## 1.2.2 — taux souverains via CNBC
 - Nouvelle source `cnbc:` (barres quotidiennes CNBC) en tête des chaînes Bund / OAT / BTP /
   Bonos : une seule source pour les quatre pays, spreads cohérents.

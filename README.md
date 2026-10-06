@@ -198,7 +198,10 @@ Une source injoignable (pare-feu) est ignorée 10 minutes après le premier éch
 coûter un délai d'attente par ticker. Ces sources n'ont pas de
 clé ni de garantie de service : `market-monitor fetch --provider free --tickers stooq:10fry.b
 --no-cache` vérifie un ticker en une commande. Restent sans source gratuite : les indices
-iTraxx (données Markit sous licence), Bloomberg uniquement.
+iTraxx (données Markit sous licence), Bloomberg uniquement. Un instrument qu'aucun provider
+actif ne sait servir (ou un spread dont une jambe est dans ce cas) est **masqué** des
+watchlists, de l'historique, des corrélations, de l'export et des alertes, au lieu d'apparaître
+en donnée manquante ; il revient automatiquement dès que Bloomberg est disponible.
 
 Sur un réseau d'entreprise, *Tester la connexion* (écran de démarrage) indique quelles
 sources passent. Si seule la BCE répond, `market-monitor ecb-series FLOW MOTIF` liste les
