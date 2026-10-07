@@ -578,17 +578,20 @@ La section « À vérifier avant diffusion » liste, pour les lignes publiées (
 mouvements marquants), tout ce qui doit être vu avant envoi : donnée manquante ou périmée,
 mouvement suspect, changement de contrat, proxy, source de secours, jambes décalées (§ 10.1).
 
-**Graphiques** (section `charts` de `daily_macro.yaml`) : Euro Stoxx 50, S&P 500, Bund
-10 ans, spread HY-IG (Euro et US sur le même axe, en pb), Brent en YTD, et VIX sur 6 mois.
-Chaque graphique affiche le dernier niveau et la **variation de la séance**, dont le dernier
-segment et le dernier point prennent la couleur (hausse / baisse). Dans la vue *Daily macro*,
+**Graphiques** (section `charts` de `daily_macro.yaml`) : historiques de cours de clôture
+— Euro Stoxx 50, S&P 500, Bund 10 ans, OAS High Yield Euro et US (indices ICE BofA, comme sur
+FRED, en pb), Brent en YTD, et VIX sur 6 mois. Présentation façon Investing : zone remplie
+sous la courbe, échelle ajustée aux cours de la période (pas depuis zéro), pointillé et
+étiquette du dernier cours sur l'axe de droite. La **variation de la séance** est indiquée
+sous le titre ; le dernier segment, le dernier point et l'étiquette prennent sa couleur
+(hausse / baisse). Le graphique HY-IG reste disponible en une ligne (commentée dans le fichier). Dans la vue *Daily macro*,
 la période se change graphique par graphique (1M à 5A, YTD, ou « Depuis une date… ») ;
 *Télécharger les graphiques (PNG)* reprend les périodes choisies. L'export en ligne de
 commande écrit en plus `<préfixe>_<date>_graphiques.png` avec les périodes du fichier.
 
 ```yaml
 charts:
-  - {title: Spread HY-IG, instruments: [HY_IG_EUR, HY_IG_US], labels: [Euro, US], period: YTD}
+  - {title: OAS High Yield, instruments: [EUR_HY_OAS, US_HY_OAS], labels: [Euro HY, US HY]}
   - {title: VIX, instruments: [VIX], period: 6M}
   - {title: Bund 10 ans, instruments: [BUND_10Y], start: 2026-03-01}   # date de début fixe
 ```

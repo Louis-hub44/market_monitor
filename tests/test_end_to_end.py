@@ -77,7 +77,7 @@ def test_real_main_page_with_repository_config():
     # daily macro charts: one Plotly figure per configured chart, period changed in place
     assert len(at.get("plotly_chart")) >= 6
     text = " ".join(m.value for m in at.markdown)
-    assert "Spread HY-IG" in text and "VIX" in text and "6 mois" in text
+    assert "OAS High Yield" in text and "VIX" in text and "6 mois" in text
     at.selectbox(key="mm-chart-5-period").set_value("1M").run()
     assert not at.exception, at.exception
     assert "1 mois" in " ".join(m.value for m in at.markdown)

@@ -142,7 +142,7 @@ def build_charts(monitor: MarketMonitor, specs: Sequence[ChartSpec], as_of: date
 
 
 # ====================================================================== PNG
-COLUMNS, CELL_W_IN, CELL_H_IN = 2, 4.0, 2.55
+COLUMNS, CELL_W_IN, CELL_H_IN = 2, 4.0, 2.7
 RIGHT_MARGIN = 0.03  # share of the window left blank after the last date
 
 
@@ -168,11 +168,16 @@ def _draw(ax: Axes, chart: ChartData) -> None:
         ax.set_xticks([])
         ax.set_yticks([])
         return
+    single = len(chart.series) == 1
+    low, high = value_range(chart)
     subtitle = []
     for k, s in enumerate(chart.series):
         colour = SERIES_COLOURS_LIGHT[k % len(SERIES_COLOURS_LIGHT)]
         ax.plot(s.values.index, s.values.to_numpy(), color=colour, linewidth=1.4,
                 label=s.label, solid_capstyle="round")
+        if single:  # Investing-style area under the price line
+            ax.fill_between(s.values.index, s.values.to_numpy(), low, color=colour, alpha=0.10,
+                            linewidth=0)
         move = s.change_1d
         tone = MUTED if math.isnan(move) or round(move, 2) == 0 else (UP if move > 0 else DOWN)
         if len(s.values) >= 2:  # the session's move: last segment and last point
@@ -180,8 +185,18 @@ def _draw(ax: Axes, chart: ChartData) -> None:
                     solid_capstyle="round")
         ax.plot([s.values.index[-1]], [s.last], "o", color=tone, markersize=4.5,
                 markeredgecolor="white", markeredgewidth=1.0)
+        tag = tone if single else colour
+        ax.axhline(s.last, color=tag, linewidth=0.7, linestyle=(0, (1.5, 2)))
+        ax.annotate(  # last-price tag on the right axis
+            s.level_text().replace(NNBSP, "\u00a0"), xy=(1.0, s.last),
+            xycoords=("axes fraction", "data"), xytext=(2, 0), textcoords="offset points",
+            ha="left", va="center", fontsize=6.5, fontweight="bold", color="white",
+            bbox={"boxstyle": "square,pad=0.25", "facecolor": tag, "edgecolor": tag},
+            annotation_clip=False, zorder=5,
+        )
         prefix = f"{s.label} " if len(chart.series) > 1 else ""
         subtitle.append((f"{prefix}{s.level_text()}", f" {s.change_text()}", tone))
+    ax.set_ylim(low, high)
     _subtitle(ax, subtitle)
     left, right = float(date2num(chart.start)), float(date2num(chart.end))
     ax.set_xlim(left, right + RIGHT_MARGIN * (right - left))  # room for the last point
@@ -194,6 +209,14 @@ def _draw(ax: Axes, chart: ChartData) -> None:
     if len(chart.series) > 1:
         ax.legend(loc="best", fontsize=7, frameon=True, facecolor="white", edgecolor="white",
                   framealpha=0.85, labelcolor=INK)
+
+
+def value_range(chart: ChartData, pad: float = 0.08) -> tuple[float, float]:
+    """Y range fitted to the data (not to zero), with a margin: moves stay readable."""
+    low = min(float(s.values.min()) for s in chart.series)
+    high = max(float(s.values.max()) for s in chart.series)
+    margin = (high - low) * pad or abs(high) * 0.01 or 1.0
+    return low - margin, high + margin
 
 
 def _subtitle(ax: Axes, parts: list[tuple[str, str, str]]) -> None:
@@ -226,7 +249,7 @@ def render_charts_png(charts: Sequence[ChartData], target: str | Path | BinaryIO
             _draw(ax, charts[k])
         else:
             ax.set_visible(False)
-    fig.tight_layout(h_pad=1.6, w_pad=2.0)
+    fig.tight_layout(h_pad=1.6, w_pad=3.2)
     fig.savefig(target, format="png", dpi=dpi, facecolor="white")
 
 

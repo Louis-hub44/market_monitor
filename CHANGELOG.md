@@ -1,5 +1,12 @@
 # Historique des versions
 
+## 1.5.1 — graphiques façon Investing, courbes d'OAS
+- Graphiques de la daily macro présentés comme un historique de cours (Investing) : zone
+  remplie, échelle ajustée aux cours, pointillé et étiquette du dernier cours sur l'axe de
+  droite, séparateur de milliers ; variation de la séance toujours mise en évidence.
+- Graphique crédit : courbes d'OAS High Yield Euro et US (ICE BofA, comme sur FRED) à la
+  place de l'écart HY-IG (gardé en variante commentée dans `daily_macro.yaml`).
+
 ## 1.5.0 — spreads de crédit et graphiques de la daily macro
 - **Spreads HY-IG** Euro et US (OAS cash, en pb) et **G spread Euro IG / Bund 5 ans** dans le
   bandeau Spreads. OAS ICE BofA via FRED en gratuit (US HY, US IG, Euro HY) ; Euro IG et

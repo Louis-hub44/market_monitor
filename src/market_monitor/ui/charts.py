@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 from market_monitor.analytics.comparison import ComparisonResult
 from market_monitor.analytics.performance import ZSCORE_HORIZONS, Horizon
 from market_monitor.analytics.quality import needs_check
-from market_monitor.export.charts import MONTHS_SHORT, ChartData, ChartSeries
+from market_monitor.export.charts import MONTHS_SHORT, ChartData, ChartSeries, value_range
 from market_monitor.referential import AssetClass, ChangeUnit
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -157,14 +157,22 @@ def rolling_correlation_figure(series: pd.Series, label: str) -> go.Figure:
     return fig
 
 
-def daily_chart_figure(chart: ChartData, height: int = 300) -> go.Figure:
-    """One daily-macro chart: lines, the session's move drawn in its sign colour, hover."""
+def daily_chart_figure(chart: ChartData, height: int = 320) -> go.Figure:
+    """Price history, Investing-style: area under a single line, last price tagged on the axis.
+
+    The last session stays visible: last segment and point in the colour of the move, dotted
+    line at the last level, and a tag on the right axis (green / red for a single series,
+    series colour when several share the chart).
+    """
     fig = go.Figure()
+    single = len(chart.series) == 1
+    tags: list[tuple[float, str, str]] = []
     for k, s in enumerate(chart.series):
         colour = theme.CHART_COLORS[k % len(theme.CHART_COLORS)]
         fig.add_trace(go.Scatter(
             x=s.values.index, y=s.values.to_numpy(), mode="lines", name=s.label,
             line={"width": 2, "color": colour},
+            fill="tozeroy" if single else None, fillcolor=_rgba(colour, 0.14),
             hovertemplate=f"{s.label} : %{{y:,.{_hover_decimals(s)}f}}<extra></extra>",
         ))
         move = s.change_1d
@@ -172,26 +180,40 @@ def daily_chart_figure(chart: ChartData, height: int = 300) -> go.Figure:
         tail = s.values.iloc[-2:]
         fig.add_trace(go.Scatter(  # last session: segment + point, coloured by the move
             x=tail.index, y=tail.to_numpy(), mode="lines+markers", showlegend=False,
-            line={"width": 3.5, "color": tone},
-            marker={"size": [0, 9][-len(tail):], "color": tone,
+            line={"width": 3, "color": tone},
+            marker={"size": [0, 8][-len(tail):], "color": tone,
                     "line": {"width": 2, "color": theme.BACKGROUND}},
             hoverinfo="skip",
         ))
+        tags.append((s.last, s.level_text(), tone if single else colour))
     if chart.series:
-        span = (pd.Timestamp(chart.end) - pd.Timestamp(chart.start)) * 0.03
+        span = (pd.Timestamp(chart.end) - pd.Timestamp(chart.start)) * 0.02
         fig.update_xaxes(range=[pd.Timestamp(chart.start), pd.Timestamp(chart.end) + span])
+        fig.update_yaxes(range=list(value_range(chart)))
     tick_values, tick_text = french_date_ticks(pd.Timestamp(chart.start), pd.Timestamp(chart.end))
     fig.update_xaxes(showgrid=False, color=theme.MUTED, tickvals=tick_values, ticktext=tick_text,
-                     hoverformat="%d/%m/%Y")
+                     hoverformat="%d/%m/%Y", showline=True, linecolor=theme.RULE)
     fig.update_yaxes(side="right", gridcolor=theme.RULE, color=theme.MUTED, zeroline=False,
-                     ticksuffix=f" {chart.unit_label}" if chart.unit_label else "")
+                     tickformat=",~r", ticksuffix=f" {chart.unit_label}" if chart.unit_label else "")
     _apply_layout(fig, height=height)
     fig.update_layout(
-        hovermode="x unified", showlegend=len(chart.series) > 1,
+        hovermode="x unified", showlegend=not single,
         legend={"orientation": "h", "y": 1.02, "x": 0, "yanchor": "bottom", "font": {"color": theme.TEXT}},
-        margin={"l": 0, "r": 0, "t": 28 if len(chart.series) > 1 else 8, "b": 0},
+        margin={"l": 0, "r": 78, "t": 8 if single else 28, "b": 0},
     )
+    for level, text, colour in tags:  # after _apply_layout, which restyles annotations as titles
+        fig.add_hline(y=level, line={"color": colour, "width": 1, "dash": "dot"})
+        fig.add_annotation(  # last-price tag on the right axis
+            x=1, xref="paper", xanchor="left", y=level, yref="y", showarrow=False,
+            text=f"<b>{text}</b>", bgcolor=colour, borderpad=3,
+            font={"color": "#FFFFFF", "size": 11},
+        )
     return fig
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{alpha})"
 
 
 def french_date_ticks(start: pd.Timestamp, end: pd.Timestamp,

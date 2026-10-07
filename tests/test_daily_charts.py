@@ -52,7 +52,8 @@ def test_repository_layout_has_spreads_and_charts():
     spreads = next(s for s in layout.sections if s.title == "Spreads")
     assert {"HY_IG_EUR", "HY_IG_US", "G_SPREAD_EUR_IG"} <= set(spreads.instruments)
     assert [c.instruments for c in layout.charts] == [
-        ("SX5E",), ("SPX",), ("BUND_10Y",), ("HY_IG_EUR", "HY_IG_US"), ("BRENT",), ("VIX",)]
+        ("SX5E",), ("SPX",), ("BUND_10Y",), ("EUR_HY_OAS", "US_HY_OAS"), ("BRENT",), ("VIX",)]
+    assert layout.charts[3].labels == ("Euro HY", "US HY")
     assert [c.period for c in layout.charts] == ["YTD"] * 5 + ["6M"]
 
 
@@ -121,6 +122,14 @@ def test_png_and_plotly(monitor):
     assert [t.name for t in fig.data if t.showlegend is not False] == [
         "Spread HY-IG Euro", "Spread HY-IG US"]
     assert fig.layout.showlegend is True
+    tags = [a for a in fig.layout.annotations if a.x == 1 and a.xanchor == "left"]
+    assert len(tags) == 2 and all("pb" in a.text for a in tags)  # last level on the right axis
+    assert len(fig.layout.shapes) == 2  # dotted line at each last level
+    single = daily_chart_figure(charts[0])
+    assert single.data[0].fill == "tozeroy" and single.layout.showlegend is False
+    low, high = single.layout.yaxis.range
+    values = charts[0].series[0].values
+    assert low < values.min() and high > values.max() and low > 0  # fitted, not from zero
     html = chart_header_html(charts[1])
     assert "Spread HY-IG Euro" in html and "pb" in html and "6 mois" in html
 
