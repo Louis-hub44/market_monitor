@@ -20,6 +20,7 @@ Each client returns one cleaned :class:`pandas.Series` (date -> value) for ``[st
 from __future__ import annotations
 
 import io
+import os
 from datetime import date
 from typing import Any
 
@@ -33,6 +34,8 @@ from market_monitor.exceptions import DataProviderError, ProviderUnavailableErro
 STOOQ_URL = "https://stooq.com/q/d/l/"
 BUNDESBANK_URL = "https://api.statistiken.bundesbank.de/rest/data"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+FRED_API_URL = "https://api.stlouisfed.org/fred/series/observations"
+ENV_FRED_API_KEY = "FRED_API_KEY"
 STOXX_URL = "https://www.stoxx.com/document/Indices/Current/HistoricalData"
 CNBC_URL = "https://ts-api.cnbc.com/harmony/app/bars"
 MSCI_URL = "https://app2.msci.com/products/service/index/indexmaster/getLevelDataForGraph"
@@ -162,6 +165,50 @@ def parse_fred_csv(text: str, series_id: str = "") -> pd.Series:
         raise DataProviderError(f"unexpected FRED CSV for {series_id}: {body.splitlines()[0][:120]}")
     values = pd.to_numeric(frame.iloc[:, 1], errors="coerce")
     return clean_series(pd.Series(values.to_numpy(), index=frame.iloc[:, 0]))
+
+
+class FredApiClient(_CsvClient):
+    """Official FRED web API (``api.stlouisfed.org``): free key in ``FRED_API_KEY``.
+
+    Another host than the graph export: on a corporate network that blocks
+    ``fred.stlouisfed.org`` it may still be reachable (chain ``fred:X|fredapi:X``).
+    """
+
+    source = "FRED API"
+    default_url = FRED_API_URL
+
+    def __init__(self, base_url: str | None = None, *, api_key: str | None = None,
+                 **kwargs: Any) -> None:
+        super().__init__(base_url, **kwargs)
+        self._api_key = (api_key if api_key is not None else os.environ.get(ENV_FRED_API_KEY, "")).strip()
+
+    def fetch(self, series_id: str, start: date, end: date) -> pd.Series:
+        if not self._api_key:
+            raise DataProviderError(f"FRED API: no key ({ENV_FRED_API_KEY} missing from .env)")
+        response = get_with_retry(
+            self._session, self._base_url,
+            params={"series_id": series_id, "api_key": self._api_key, "file_type": "json",
+                    "observation_start": start.isoformat(), "observation_end": end.isoformat()},
+            timeout_s=self._timeout_s, max_retries=self._max_retries, backoff_s=1.0,
+            source=self.source, secrets=(self._api_key,),
+        )
+        if response.status_code >= 400:
+            raise DataProviderError(f"FRED API HTTP {response.status_code} for {series_id}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise DataProviderError(f"FRED API returned no JSON for {series_id}") from exc
+        return _window(parse_fred_observations(payload, series_id), start, end)
+
+
+def parse_fred_observations(payload: Any, series_id: str = "") -> pd.Series:
+    """``observations[] -> {date, value}`` (missing values are ``.``)."""
+    observations = payload.get("observations") if isinstance(payload, dict) else None
+    if not isinstance(observations, list):
+        raise DataProviderError(f"unexpected FRED API payload for {series_id}")
+    rows = [o for o in observations if isinstance(o, dict)]
+    values = pd.to_numeric(pd.Series([o.get("value") for o in rows], dtype="object"), errors="coerce")
+    return clean_series(pd.Series(values.to_numpy(), index=[o.get("date") for o in rows]))
 
 
 # ---------------------------------------------------------------------- STOXX

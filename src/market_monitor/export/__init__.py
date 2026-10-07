@@ -9,6 +9,7 @@ from pathlib import Path
 from market_monitor.alerts import AlertRule
 from market_monitor.data.models import DateLike
 from market_monitor.export.builder import DailyMacroData, build_daily_macro, select_movers
+from market_monitor.export.charts import build_charts, render_charts_png
 from market_monitor.export.excel import excel_bytes, write_excel
 from market_monitor.export.image import png_bytes, render_png
 from market_monitor.export.layout import DailyMacroLayout, load_layout
@@ -22,11 +23,12 @@ class ExportResult:
     png: Path
     text: Path
     data: DailyMacroData
+    charts: Path | None = None  # ``<prefix>_<date>_graphiques.png`` when the layout has charts
 
 
 def export_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout, out_dir: str | Path,
                        as_of: DateLike | None = None, rules: Sequence[AlertRule] = ()) -> ExportResult:
-    """Build once, write ``<prefix>_<date>.xlsx / .png / .txt`` into ``out_dir``.
+    """Build once, write ``<prefix>_<date>.xlsx / .png / .txt`` (+ ``_graphiques.png``) into ``out_dir``.
 
     Alerts (if ``rules``) go to the text and the Excel only - never to the public PNG.
     """
@@ -38,7 +40,11 @@ def export_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout, out_dir
     write_excel(data, paths["xlsx"])
     render_png(data, paths["png"])
     paths["txt"].write_text(render_text(data), encoding="utf-8")
-    return ExportResult(paths["xlsx"], paths["png"], paths["txt"], data)
+    charts = None
+    if layout.charts:
+        charts = folder / f"{stem.name}_graphiques.png"
+        render_charts_png(build_charts(monitor, layout.charts, data.as_of), charts)
+    return ExportResult(paths["xlsx"], paths["png"], paths["txt"], data, charts)
 
 
 __all__ = [

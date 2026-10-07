@@ -62,6 +62,8 @@ PROBES: dict[str, str] = {
     "BUNDESBANK": "https://api.statistiken.bundesbank.de/rest/data/BBSIS/"
                   "D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A?lastNObservations=1",
     "FRED": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2",
+    # without a key the API answers 400: that still proves the host is reachable
+    "FRED API": "https://api.stlouisfed.org/fred/series?series_id=DGS2",
     "STOXX": "https://www.stoxx.com/document/Indices/Current/HistoricalData/h_v2tx.txt",
     "CNBC": "https://ts-api.cnbc.com/harmony/app/bars/FR10Y-FR/1D/"
             "20260901000000/20260930235959/adjusted/EST5EDT.json",

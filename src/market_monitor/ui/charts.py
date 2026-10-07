@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 from market_monitor.analytics.comparison import ComparisonResult
 from market_monitor.analytics.performance import ZSCORE_HORIZONS, Horizon
 from market_monitor.analytics.quality import needs_check
+from market_monitor.export.charts import MONTHS_SHORT, ChartData, ChartSeries
 from market_monitor.referential import AssetClass, ChangeUnit
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -154,6 +155,65 @@ def rolling_correlation_figure(series: pd.Series, label: str) -> go.Figure:
     fig.update_xaxes(showgrid=False, color=theme.MUTED)
     _apply_layout(fig, height=300)
     return fig
+
+
+def daily_chart_figure(chart: ChartData, height: int = 300) -> go.Figure:
+    """One daily-macro chart: lines, the session's move drawn in its sign colour, hover."""
+    fig = go.Figure()
+    for k, s in enumerate(chart.series):
+        colour = theme.CHART_COLORS[k % len(theme.CHART_COLORS)]
+        fig.add_trace(go.Scatter(
+            x=s.values.index, y=s.values.to_numpy(), mode="lines", name=s.label,
+            line={"width": 2, "color": colour},
+            hovertemplate=f"{s.label} : %{{y:,.{_hover_decimals(s)}f}}<extra></extra>",
+        ))
+        move = s.change_1d
+        tone = theme.sign_color(round(move, 2) if not math.isnan(move) else move)
+        tail = s.values.iloc[-2:]
+        fig.add_trace(go.Scatter(  # last session: segment + point, coloured by the move
+            x=tail.index, y=tail.to_numpy(), mode="lines+markers", showlegend=False,
+            line={"width": 3.5, "color": tone},
+            marker={"size": [0, 9][-len(tail):], "color": tone,
+                    "line": {"width": 2, "color": theme.BACKGROUND}},
+            hoverinfo="skip",
+        ))
+    if chart.series:
+        span = (pd.Timestamp(chart.end) - pd.Timestamp(chart.start)) * 0.03
+        fig.update_xaxes(range=[pd.Timestamp(chart.start), pd.Timestamp(chart.end) + span])
+    tick_values, tick_text = french_date_ticks(pd.Timestamp(chart.start), pd.Timestamp(chart.end))
+    fig.update_xaxes(showgrid=False, color=theme.MUTED, tickvals=tick_values, ticktext=tick_text,
+                     hoverformat="%d/%m/%Y")
+    fig.update_yaxes(side="right", gridcolor=theme.RULE, color=theme.MUTED, zeroline=False,
+                     ticksuffix=f" {chart.unit_label}" if chart.unit_label else "")
+    _apply_layout(fig, height=height)
+    fig.update_layout(
+        hovermode="x unified", showlegend=len(chart.series) > 1,
+        legend={"orientation": "h", "y": 1.02, "x": 0, "yanchor": "bottom", "font": {"color": theme.TEXT}},
+        margin={"l": 0, "r": 0, "t": 28 if len(chart.series) > 1 else 8, "b": 0},
+    )
+    return fig
+
+
+def french_date_ticks(start: pd.Timestamp, end: pd.Timestamp,
+                      max_ticks: int = 6) -> tuple[list[pd.Timestamp], list[str]]:
+    """French axis ticks: month starts (``janv.``), or days (``14 sept.``) on short windows."""
+    if (end - start).days > 730:
+        years = pd.date_range(start + pd.Timedelta(days=1), end, freq="YS")
+        return list(years), [str(t.year) for t in years]
+    if (end - start).days > 70:
+        months = pd.date_range(start + pd.Timedelta(days=1), end, freq="MS")
+        step = max(1, -(-len(months) // max_ticks))
+        ticks = list(months[::step])
+        text = [MONTHS_SHORT[t.month - 1] + (f" {t.year}" if t.month == 1 and step < 12 else "")
+                for t in ticks]
+        return ticks, text
+    days = pd.date_range(start, end, periods=min(max_ticks, max((end - start).days, 1) + 1)).normalize()
+    return list(days), [f"{t.day} {MONTHS_SHORT[t.month - 1]}" for t in days]
+
+
+def _hover_decimals(series: ChartSeries) -> int:
+    quote = series.instrument.quote.value
+    return 3 if quote == "yield" else (1 if quote == "spread" else 2)
 
 
 def _apply_layout(fig: go.Figure, height: int) -> None:

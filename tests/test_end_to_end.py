@@ -35,7 +35,7 @@ def monitor():
 
 def test_full_universe_performance(monitor):
     report = monitor.performance("home", AS_OF)
-    assert len(report.table) == 76
+    assert len(report.table) == 84
     assert report.table["level"].notna().all() and not report.errors
     assert report.table.loc["OAT_BUND_10Y", "source"] == "derived"
     assert report.table["z_1d"].notna().sum() > 60
@@ -74,6 +74,16 @@ def test_real_main_page_with_repository_config():
     for view in ("history", "correlations", "alerts", "daily"):
         at.segmented_control(key="mm-view").set_value(view).run()
         assert not at.exception, (view, at.exception)
+    # daily macro charts: one Plotly figure per configured chart, period changed in place
+    assert len(at.get("plotly_chart")) >= 6
+    text = " ".join(m.value for m in at.markdown)
+    assert "Spread HY-IG" in text and "VIX" in text and "6 mois" in text
+    at.selectbox(key="mm-chart-5-period").set_value("1M").run()
+    assert not at.exception, at.exception
+    assert "1 mois" in " ".join(m.value for m in at.markdown)
+    at.selectbox(key="mm-chart-0-period").set_value("dates").run()
+    assert not at.exception, at.exception
+    assert at.date_input(key="mm-chart-0-start")
 
 
 # ------------------------------------------------------------------------- CLI
@@ -107,7 +117,7 @@ def test_cli_doctor_offline(tmp_path, capsys):
         f"cache:\n  directory: cache\n", encoding="utf-8")
     code = main(["--config", str(config), "doctor"])
     out = capsys.readouterr().out
-    assert "[OK] Référentiel : 76 instruments" in out
+    assert "[OK] Référentiel : 84 instruments" in out
     assert "[!!] Alertes" in out and "[!!] Provider fmp : FMP_API_KEY absente" in out
     assert code == 2  # alert rules file missing
 

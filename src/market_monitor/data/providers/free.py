@@ -39,6 +39,7 @@ from market_monitor.data.providers._http import get_with_retry
 from market_monitor.data.providers.public import (
     BundesbankClient,
     CnbcClient,
+    FredApiClient,
     FredClient,
     MsciClient,
     StooqClient,
@@ -341,6 +342,7 @@ def default_sources(
         "stooq:": StooqClient(**kwargs),
         "bbk:": BundesbankClient(**kwargs),
         "fred:": FredClient(**kwargs),
+        "fredapi:": FredApiClient(**kwargs),
         "stoxx:": StoxxClient(**kwargs),
         "cnbc:": CnbcClient(**kwargs),
         "msci:": MsciClient(**kwargs),

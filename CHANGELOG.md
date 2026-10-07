@@ -1,5 +1,18 @@
 # Historique des versions
 
+## 1.5.0 — spreads de crédit et graphiques de la daily macro
+- **Spreads HY-IG** Euro et US (OAS cash, en pb) et **G spread Euro IG / Bund 5 ans** dans le
+  bandeau Spreads. OAS ICE BofA via FRED en gratuit (US HY, US IG, Euro HY) ; Euro IG et
+  rendement Euro IG : Bloomberg, sinon saisie manuelle (aucune source gratuite fiable).
+- Nouvelle source `fredapi:` (API officielle FRED, clé gratuite `FRED_API_KEY`) en secours de
+  `fred:` quand `fred.stlouisfed.org` est bloqué ; sondée par *Tester la connexion*.
+- **Graphiques de la daily macro** (section `charts`) : Euro Stoxx 50, S&P 500, Bund 10 ans,
+  HY-IG, Brent en YTD, VIX sur 6 mois ; dernier niveau et variation de la séance mis en
+  évidence ; période modifiable par graphique dans le dashboard (ou date de début libre) ;
+  PNG des graphiques téléchargeable et écrit par `market-monitor daily-macro`.
+- Saisie manuelle : propose les jambes des spreads publiés quand elles n'ont pas d'autre
+  source ; formulaire en grille de quatre.
+
 ## 1.4.0 — format de la revue, MSCI EM officiel, iTraxx
 - **Daily macro au format de la revue** : bandeaux Indices (Euro Stoxx 50, CAC 40, S&P 500,
   Nasdaq 100, Nikkei 225, CSI 300), Taux 10 ans par pays (États-Unis, Allemagne, France, Italie,

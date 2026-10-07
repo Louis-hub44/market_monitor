@@ -24,6 +24,9 @@ SEVERITY_COLORS = {"critical": DOWN, "warning": ACCENT, "info": INFO}
 SERIES_COLORS = ["#F0A830", "#6CB4E8", "#B79CE0", "#F28DB2", "#8FD3C1", "#E8D58A",
                  "#9DB0C2", "#C8E07A", "#F5B98A", "#7F8FE8"]
 
+#: daily-macro chart lines, validated on BACKGROUND (lightness band, CVD separation, contrast)
+CHART_COLORS = ["#C4861F", "#4690CF", "#9AA8B6", "#A98BD6"]
+
 FONT_FAMILY = "'IBM Plex Sans Condensed', 'Arial Narrow', 'Segoe UI', sans-serif"
 FONT_URL = (
     "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap"
@@ -144,6 +147,16 @@ h3.mm-class {{ font-size: 1.02rem; color: {TEXT}; font-weight: 600; margin: 1.1r
 .mm-probe.ok {{ color: {UP}; border-color: {blend(RULE, UP, .5)}; }}
 .mm-probe.ko {{ color: {DOWN}; border-color: {blend(RULE, DOWN, .5)}; }}
 .mm-probe b {{ color: {TEXT}; margin-right: .3rem; }}
+
+/* ---- daily-macro charts */
+.mm-chart-head {{ margin: .4rem 0 .2rem 0; }}
+.mm-chart-head .ttl {{ color: {TEXT}; font-weight: 600; font-size: 1rem; }}
+.mm-chart-head .per {{ color: {MUTED}; font-weight: 400; }}
+.mm-chart-head .vals {{ font-variant-numeric: tabular-nums; margin-top: .1rem; }}
+.mm-chart-head .lvl {{ color: {TEXT}; font-weight: 600; }}
+.mm-chart-head .lbl {{ color: {MUTED}; }}
+.mm-chart-head .chg {{ font-weight: 600; }}
+.mm-chart-head .sep {{ color: {RULE}; }}
 
 @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; animation: none !important; }} }}
 </style>

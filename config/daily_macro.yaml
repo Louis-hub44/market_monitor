@@ -41,7 +41,8 @@ sections:
       - {id: GOLD, decimals: 0, suffix: " $"}
       - {id: BTC, decimals: 0, suffix: " $"}
 
-  # iTraxx : Bloomberg, sinon saisie manuelle (vue Daily macro / `market-monitor quote set`).
+  # iTraxx, OAS Euro IG et rendement Euro IG : Bloomberg, sinon saisie manuelle (vue Daily
+  # macro / `market-monitor quote set`). OAS HY et US IG : FRED (ICE BofA) en gratuit.
   - title: Spreads
     decimals: 1
     change_decimals: 1
@@ -49,6 +50,24 @@ sections:
       - {id: OAT_BUND_10Y, label: OAT-Bund 10 ans, decimals: 0, change_decimals: 0}
       - {id: ITRX_MAIN, label: iTraxx Main}
       - {id: ITRX_XOVER, label: iTraxx Crossover}
+      - {id: HY_IG_EUR, label: HY-IG Euro, decimals: 0, change_decimals: 0}
+      - {id: HY_IG_US, label: HY-IG US, decimals: 0, change_decimals: 0}
+      - {id: G_SPREAD_EUR_IG, label: G spread Euro IG, decimals: 0, change_decimals: 0}
+
+# Graphiques (vue Daily macro et PNG « graphiques » de l'export). Par graphique :
+#   title        titre affiché
+#   instruments  1 à 4 identifiants (un seul axe : même unité, ex. deux spreads en pb)
+#   period       1M | 3M | 6M | YTD | 1A | 3A | 5A (défaut YTD)
+#   start        date de début fixe AAAA-MM-JJ (remplace period)
+#   labels       libellés de légende, dans l'ordre des instruments
+# La période et les dates se changent aussi dans le dashboard, graphique par graphique.
+charts:
+  - {title: Euro Stoxx 50, instruments: [SX5E], period: YTD}
+  - {title: S&P 500, instruments: [SPX], period: YTD}
+  - {title: Bund 10 ans, instruments: [BUND_10Y], period: YTD}
+  - {title: Spread HY-IG, instruments: [HY_IG_EUR, HY_IG_US], labels: [Euro, US], period: YTD}
+  - {title: Brent, instruments: [BRENT], period: YTD}
+  - {title: VIX, instruments: [VIX], period: 6M}
 
 # Variations affichées, parmi chg_1d, chg_1w, chg_mtd, chg_ytd
 columns: [chg_1d]

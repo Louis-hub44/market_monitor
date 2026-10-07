@@ -185,10 +185,11 @@ la section `network` (usage à la maison).
 | `free` | Stooq `stooq:SYMBOLE` (rendements souverains en %) | `stooq:10dey.b` (Bund 10 ans), `stooq:2fry.b`, `stooq:10ity.b`, `stooq:30esy.b` |
 | `free` | Bundesbank SDMX `bbk:FLOW/KEY` | `bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A` (zéro-coupon 10 ans) |
 | `free` | FRED `fred:SERIE` | `fred:DGS2` (UST 2 ans, publié à J-1, secours) |
+| `free` | API FRED `fredapi:SERIE` (clé gratuite `FRED_API_KEY`, autre serveur) | `fredapi:BAMLH0A0HYM2` (OAS US High Yield) |
 | `free` | STOXX `stoxx:SYMBOLE` (fichier historique) | `stoxx:v2tx` (VSTOXX) |
 | `free` | CNBC `cnbc:SYMBOLE` (barres quotidiennes, non officiel) | `cnbc:FR10Y-FR`, `cnbc:DE2Y-DE`, `cnbc:IT30Y-IT`, `cnbc:GB10Y-GB`, `cnbc:JP10Y-JP`, `cnbc:US10Y` |
 | `free` | MSCI `msci:CODE[/VARIANTE/DEVISE]` (niveaux de clôture officiels) | `msci:891800` (MSCI EM, prix, USD), `msci:990100/NETR/EUR` |
-| `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER` |
+| `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER`, `EUR_IG_OAS`, `EUR_IG_YLD` |
 
 Sans Bloomberg, le fallback gratuit couvre les courbes Bund / OAT / BTP / Bonos (Stooq, une
 seule source pour que les spreads restent cohérents ; la courbe Bundesbank est indiquée en
@@ -292,6 +293,26 @@ $$
    **un seul appel $[30/09, 05/10]$** au lieu de quatre mois.
 4. Requête du 02/03 au 05/10 : seul le trou $[02/03, 31/05]$ est demandé.
 
+**Spreads de crédit cash** (en pb) :
+
+| Ligne | Calcul | Sources |
+|---|---|---|
+| HY-IG US | OAS US High Yield − OAS US Investment Grade | Bloomberg (`LF98OAS`, `LUACOAS`), sinon FRED : ICE BofA `BAMLH0A0HYM2`, `BAMLC0A0CM` |
+| HY-IG Euro | OAS Euro High Yield − OAS Euro IG | Euro HY : Bloomberg, sinon FRED `BAMLHE00EHYIOAS` ; Euro IG : Bloomberg (`LECPOAS`), sinon saisie manuelle |
+| G spread Euro IG | 100 × (rendement Euro Corporate IG − Bund 5 ans) | rendement : Bloomberg, sinon saisie manuelle ; Bund 5 ans : chaîne habituelle |
+
+FRED publie les indices ICE BofA gratuitement (officiel, quotidien, J-1, historique de trois
+ans) et en %, d'où `scale: 100`. Pour l'**Euro IG**, aucune source gratuite fiable n'existe :
+ICE, iBoxx et Bloomberg sont sous licence et FRED ne publie que l'Euro High Yield ; la ligne
+passe donc par Bloomberg ou par la saisie manuelle (§ 5.4). Le G spread utilise le Bund
+5 ans, maturité proche de la duration de l'indice (~4,5 ans). Les tickers Bloomberg sont à
+vérifier sur le Terminal ; leurs niveaux diffèrent de quelques pb des indices ICE.
+
+Au bureau, `fred.stlouisfed.org` peut être bloqué : la chaîne `fred:X|fredapi:X` essaie alors
+l'API FRED (`api.stlouisfed.org`), avec une clé gratuite à créer sur
+fredaccount.stlouisfed.org et à placer dans `.env` (`FRED_API_KEY=…`). *Tester la connexion*
+sonde les deux serveurs. Sinon, la ligne se saisit à la main.
+
 ### 5.4 Saisie manuelle (iTraxx sans Bloomberg)
 
 Aucune source gratuite ne publie l'iTraxx Europe Main / Crossover 5 ans. Le provider `manual`
@@ -303,6 +324,8 @@ immédiatement.
 
 * **Dashboard**, vue *Daily macro* : encart « Saisie manuelle », ouvert quand une valeur
   manque pour la dernière séance (date proposée : jour ouvré précédant la date d'arrêté).
+  Il propose aussi les jambes des spreads publiés (OAS Euro IG, rendement Euro IG…) : une
+  jambe qui a une autre source n'y apparaît que lorsque cette source ne l'a pas servie.
 * **Ligne de commande** :
 
 ```powershell
@@ -554,6 +577,23 @@ taux, **écartement / resserrement** pour les spreads, « fort(e) » au-delà de
 La section « À vérifier avant diffusion » liste, pour les lignes publiées (bandeaux et
 mouvements marquants), tout ce qui doit être vu avant envoi : donnée manquante ou périmée,
 mouvement suspect, changement de contrat, proxy, source de secours, jambes décalées (§ 10.1).
+
+**Graphiques** (section `charts` de `daily_macro.yaml`) : Euro Stoxx 50, S&P 500, Bund
+10 ans, spread HY-IG (Euro et US sur le même axe, en pb), Brent en YTD, et VIX sur 6 mois.
+Chaque graphique affiche le dernier niveau et la **variation de la séance**, dont le dernier
+segment et le dernier point prennent la couleur (hausse / baisse). Dans la vue *Daily macro*,
+la période se change graphique par graphique (1M à 5A, YTD, ou « Depuis une date… ») ;
+*Télécharger les graphiques (PNG)* reprend les périodes choisies. L'export en ligne de
+commande écrit en plus `<préfixe>_<date>_graphiques.png` avec les périodes du fichier.
+
+```yaml
+charts:
+  - {title: Spread HY-IG, instruments: [HY_IG_EUR, HY_IG_US], labels: [Euro, US], period: YTD}
+  - {title: VIX, instruments: [VIX], period: 6M}
+  - {title: Bund 10 ans, instruments: [BUND_10Y], start: 2026-03-01}   # date de début fixe
+```
+
+Un graphique a un seul axe : n'y regrouper que des instruments de même unité (au plus 4).
 
 ### 10.1 Contrôles avant publication
 

@@ -183,6 +183,38 @@ instruments:
   ITRX_XOVER: {name: iTraxx Crossover 5Y, class: credit, group: iTraxx 5 ans,
                tickers: {bloomberg: ITRXEXE CBIN Curncy, manual: ITRX_XOVER}}
 
+  # Crédit cash : OAS (option-adjusted spread) des indices obligataires, en pb.
+  # Gratuit et officiel : indices ICE BofA publiés par FRED (en %, d'où scale: 100 ; quotidien,
+  # J-1, historique limité à 3 ans). Au bureau, fred.stlouisfed.org peut être bloqué : la
+  # chaîne essaie ensuite l'API FRED (autre serveur, clé gratuite FRED_API_KEY dans .env),
+  # puis la saisie manuelle. Bloomberg reste prioritaire (indices Bloomberg, tickers à
+  # vérifier : leurs niveaux diffèrent de quelques pb des indices ICE).
+  # Euro IG : aucune source gratuite fiable (ICE, iBoxx et Bloomberg sont sous licence ;
+  # FRED ne publie que l'Euro High Yield) -> Bloomberg, sinon saisie manuelle.
+  US_HY_OAS:  {name: OAS US High Yield, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LF98OAS Index, manual: US_HY_OAS,
+                         free: {ticker: "fred:BAMLH0A0HYM2|fredapi:BAMLH0A0HYM2", scale: 100}}}
+  US_IG_OAS:  {name: OAS US Investment Grade, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LUACOAS Index, manual: US_IG_OAS,
+                         free: {ticker: "fred:BAMLC0A0CM|fredapi:BAMLC0A0CM", scale: 100}}}
+  EUR_HY_OAS: {name: OAS Euro High Yield, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LP01OAS Index, manual: EUR_HY_OAS,
+                         free: {ticker: "fred:BAMLHE00EHYIOAS|fredapi:BAMLHE00EHYIOAS", scale: 100}}}
+  EUR_IG_OAS: {name: OAS Euro Investment Grade, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LECPOAS Index, manual: EUR_IG_OAS}}
+  # Rendement de l'indice Euro Corporate IG (en %) : jambe du G spread, même contrainte de source.
+  EUR_IG_YLD: {name: Rendement Euro Corporate IG, class: rates, group: Crédit cash,
+               tickers: {bloomberg: LECPYW Index, manual: EUR_IG_YLD}}
+
+  HY_IG_US:   {name: Spread HY-IG US, class: credit, group: Crédit cash,
+               derived: {legs: {US_HY_OAS: 1, US_IG_OAS: -1}}}
+  HY_IG_EUR:  {name: Spread HY-IG Euro, class: credit, group: Crédit cash,
+               derived: {legs: {EUR_HY_OAS: 1, EUR_IG_OAS: -1}}}
+  # G spread : rendement Euro IG moins Bund de maturité comparable (duration de l'indice
+  # ~4,5 ans -> Bund 5 ans), en pb.
+  G_SPREAD_EUR_IG: {name: G spread Euro IG / Bund, class: credit, group: Crédit cash,
+                    derived: {multiplier: 100, legs: {EUR_IG_YLD: 1, BUND_5Y: -1}}}
+
   # ---------------------------------------------------------------------- FX
   EURUSD: {name: EUR/USD, class: fx, group: Change,
            tickers: {bloomberg: EURUSD Curncy, fmp: EURUSD, free: EURUSD=X}}

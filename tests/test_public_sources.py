@@ -112,7 +112,7 @@ def test_default_sources_share_the_corporate_session(tmp_path):
     sessions = {id(client._session) for client in provider._sources.values()}
     assert len(sessions) == 1
     assert next(iter(provider._sources.values()))._session.verify is False
-    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "stoxx:", "cnbc:", "msci:"}
+    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "fredapi:", "stoxx:", "cnbc:", "msci:"}
 
 
 def test_repository_maps_former_bloomberg_only_rates_to_free_sources():

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from market_monitor.analytics.comparison import PERIODS
 from market_monitor.export.display import (
     CHANGE_UNITS,
     DEFAULT_LINE,
@@ -43,6 +45,20 @@ class MoversRule:
 
 
 @dataclass(frozen=True)
+class ChartSpec:
+    """One chart of the daily macro: instruments over a period (or from a fixed date)."""
+
+    title: str
+    instruments: tuple[str, ...]
+    period: str = "YTD"            # one of PERIODS; ignored when ``start`` is set
+    start: date | None = None
+    labels: tuple[str, ...] = ()   # legend labels, parallel to ``instruments`` (empty = names)
+
+    def label(self, index: int, default: str) -> str:
+        return self.labels[index] if index < len(self.labels) else default
+
+
+@dataclass(frozen=True)
 class DailyMacroLayout:
     title: str
     sections: tuple[Section, ...]
@@ -50,6 +66,7 @@ class DailyMacroLayout:
     movers: MoversRule
     file_prefix: str = "daily_macro"
     style: NumberStyle = DEFAULT_STYLE
+    charts: tuple[ChartSpec, ...] = ()
 
     @property
     def section_ids(self) -> tuple[str, ...]:
@@ -88,6 +105,7 @@ def layout_from_dict(raw: Mapping[str, Any], referential: Referential) -> DailyM
         movers=_movers(raw.get("movers") or {}, referential),
         file_prefix=prefix,
         style=_style(raw.get("format") or {}),
+        charts=tuple(_chart(c, referential, k) for k, c in enumerate(raw.get("charts") or [])),
     )
 
 
@@ -141,6 +159,37 @@ def _line_format(options: Mapping[str, Any], where: str) -> LineFormat:
         change_unit=change,
         change_decimals=options.get("change_decimals"),
     )
+
+
+CHART_KEYS = {"title", "instruments", "period", "start", "labels"}
+MAX_CHART_SERIES = 4  # beyond that a chart stops being readable: split it
+
+
+def _chart(raw: Any, referential: Referential, index: int) -> ChartSpec:
+    """``{title, instruments, period: YTD | 1M | 3M | 6M | 1A | 3A | 5A, start: AAAA-MM-JJ, labels}``."""
+    if not isinstance(raw, Mapping) or not raw.get("title") or not raw.get("instruments"):
+        raise ReferentialError(f"charts[{index}] needs a title and instruments")
+    where = f"daily-macro chart {raw['title']!r}"
+    unknown = set(raw) - CHART_KEYS
+    if unknown:
+        raise ReferentialError(f"{where}: unknown keys {sorted(unknown)} (allowed: {sorted(CHART_KEYS)})")
+    entries = raw["instruments"] if isinstance(raw["instruments"], list) else [raw["instruments"]]
+    ids = referential.resolve([str(e) for e in entries], context=where)
+    if len(ids) > MAX_CHART_SERIES:
+        raise ReferentialError(f"{where}: at most {MAX_CHART_SERIES} instruments per chart")
+    period = str(raw.get("period", "YTD")).upper()
+    if period not in PERIODS:
+        raise ReferentialError(f"{where}: period must be one of {PERIODS}")
+    start = raw.get("start")
+    if start is not None and not isinstance(start, date):
+        try:
+            start = date.fromisoformat(str(start))
+        except ValueError as exc:
+            raise ReferentialError(f"{where}: start must be a date AAAA-MM-JJ") from exc
+    labels = raw.get("labels") or []
+    if not isinstance(labels, list) or len(labels) > len(ids):
+        raise ReferentialError(f"{where}: labels must be a list, at most one per instrument")
+    return ChartSpec(str(raw["title"]), ids, period, start, tuple(str(x) for x in labels))
 
 
 def _style(raw: Any) -> NumberStyle:

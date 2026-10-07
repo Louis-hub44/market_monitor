@@ -137,7 +137,8 @@ def _daily_macro(settings: Settings, args: argparse.Namespace) -> int:
     result = export_daily_macro(monitor, layout, args.out or settings.export_dir, args.as_of,
                                 _rules_if_any(settings, monitor))
     print(result.text.read_text(encoding="utf-8"))
-    print(f"Fichiers : {result.excel}, {result.png}, {result.text}")
+    files = [result.excel, result.png, result.text, *([result.charts] if result.charts else [])]
+    print("Fichiers : " + ", ".join(str(f) for f in files))
     return EXIT_OK
 
 
