@@ -20,7 +20,9 @@ from dotenv import load_dotenv
 from market_monitor.exceptions import ConfigError
 from market_monitor.network import env_ca_bundle, env_insecure
 
-KNOWN_PROVIDERS = ("bloomberg", "fmp", "free")
+KNOWN_PROVIDERS = ("bloomberg", "fmp", "free", "manual")
+#: manual quotes are local and cost nothing: always last in the chain, even when omitted
+MANUAL_PROVIDER = "manual"
 ENV_CONFIG_PATH = "MARKET_MONITOR_CONFIG"
 ENV_PROVIDERS = "MARKET_MONITOR_PROVIDERS"
 ENV_FMP_KEY = "FMP_API_KEY"
@@ -48,6 +50,11 @@ class FMPSettings:
 class FreeSettings:
     ecb_base_url: str = "https://data-api.ecb.europa.eu/service/data"
     timeout_s: float = 20.0
+
+
+@dataclass(frozen=True)
+class ManualSettings:
+    file: Path = PROJECT_ROOT / "data" / "manual_quotes.csv"
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,17 @@ class AnalyticsSettings:
 
 
 @dataclass(frozen=True)
+class QualitySettings:
+    """Publication safeguards (see README, § Contrôles avant publication)."""
+
+    suspect_abs_z: float = 8.0               # |z 1J| beyond this: data error until checked
+    cross_check: bool = True                 # compare published lines with a second source
+    cross_check_max_dev_z: float = 4.0      # 1J gap between sources, in daily sigmas
+    cross_check_level_tol_pct: float = 5.0  # level gap for prices, in %
+    cross_check_level_tol_bp: float = 25.0  # level gap for yields / spreads, in bp
+
+
+@dataclass(frozen=True)
 class UiSettings:
     """Dashboard parameters."""
 
@@ -103,9 +121,11 @@ class Settings:
     bloomberg: BloombergSettings = BloombergSettings()
     fmp: FMPSettings = FMPSettings()
     free: FreeSettings = FreeSettings()
+    manual: ManualSettings = ManualSettings()
     network: NetworkSettings = NetworkSettings()
     cache: CacheSettings = CacheSettings()
     analytics: AnalyticsSettings = AnalyticsSettings()
+    quality: QualitySettings = QualitySettings()
     ui: UiSettings = UiSettings()
     daily_macro_path: Path = PROJECT_ROOT / "config" / "daily_macro.yaml"
     alerts_path: Path = PROJECT_ROOT / "config" / "alerts.yaml"
@@ -147,6 +167,7 @@ def settings_from_dict(
     _check_timezone(timezone)
     referential = _section(raw, "referential")
     analytics = _section(raw, "analytics")
+    quality = _section(raw, "quality")
     ui = _section(raw, "ui")
     export = _section(raw, "export")
     network = _section(raw, "network")
@@ -169,6 +190,9 @@ def settings_from_dict(
             ecb_base_url=str(free.get("ecb_base_url", FreeSettings.ecb_base_url)),
             timeout_s=_float(free, "timeout_s", 20.0),
         ),
+        manual=ManualSettings(
+            file=_path(_section(providers, "manual").get("file", "../data/manual_quotes.csv"), base_dir),
+        ),
         network=NetworkSettings(
             insecure_ssl=(bool(network.get("insecure_ssl", False)) if env_insecure_ssl is None
                           else env_insecure_ssl),
@@ -186,6 +210,13 @@ def settings_from_dict(
             zscore_demean=bool(analytics.get("zscore_demean", True)),
             stale_bdays=_int(analytics, "stale_bdays", 2, low=0),
             max_reference_gap_days=_int(analytics, "max_reference_gap_days", 7, low=1),
+        ),
+        quality=QualitySettings(
+            suspect_abs_z=_float(quality, "suspect_abs_z", 8.0),
+            cross_check=bool(quality.get("cross_check", True)),
+            cross_check_max_dev_z=_float(quality, "cross_check_max_dev_z", 4.0),
+            cross_check_level_tol_pct=_float(quality, "cross_check_level_tol_pct", 5.0),
+            cross_check_level_tol_bp=_float(quality, "cross_check_level_tol_bp", 25.0),
         ),
         ui=UiSettings(
             default_watchlist=str(ui.get("default_watchlist", "home")),
@@ -246,9 +277,9 @@ def _priority(value: Any) -> tuple[str, ...]:
         raise ConfigError("providers.priority must be a list")
     names = tuple(dict.fromkeys(str(v).strip().lower() for v in items if str(v).strip()))
     unknown = [n for n in names if n not in KNOWN_PROVIDERS]
-    if not names or unknown:
+    if not names or unknown or names == (MANUAL_PROVIDER,):
         raise ConfigError(f"invalid provider priority {list(items)} (known: {KNOWN_PROVIDERS})")
-    return names
+    return names if MANUAL_PROVIDER in names else (*names, MANUAL_PROVIDER)
 
 
 def _int(section: Mapping[str, Any], key: str, default: int, *, low: int, high: int | None = None) -> int:

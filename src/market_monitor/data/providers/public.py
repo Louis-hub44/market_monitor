@@ -9,7 +9,10 @@ Native tickers (the prefix routes to the source, see :class:`FreeProvider`):
     * ``fred:<series>`` - St. Louis Fed FRED, e.g. ``fred:DGS2`` (UST 2Y constant maturity);
     * ``stoxx:<symbol>`` - STOXX historical index file, e.g. ``stoxx:v2tx`` (VSTOXX);
     * ``cnbc:<symbol>`` - CNBC daily bars (unofficial endpoint), sovereign yields in % such
-      as ``cnbc:DE10Y-DE``, ``cnbc:FR2Y-FR``, ``cnbc:IT30Y-IT``, ``cnbc:ES5Y-ES``.
+      as ``cnbc:DE10Y-DE``, ``cnbc:FR2Y-FR``, ``cnbc:IT30Y-IT``, ``cnbc:ES5Y-ES``;
+    * ``msci:<code>[/<variant>/<currency>]`` - MSCI end-of-day index levels (the service
+      behind msci.com's index pages), e.g. ``msci:891800`` = MSCI Emerging Markets, price
+      index (``STRD``) in USD - the level quoted in the press (about 1 700 in 2026).
 
 Each client returns one cleaned :class:`pandas.Series` (date -> value) for ``[start, end]``.
 """
@@ -32,6 +35,7 @@ BUNDESBANK_URL = "https://api.statistiken.bundesbank.de/rest/data"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 STOXX_URL = "https://www.stoxx.com/document/Indices/Current/HistoricalData"
 CNBC_URL = "https://ts-api.cnbc.com/harmony/app/bars"
+MSCI_URL = "https://app2.msci.com/products/service/index/indexmaster/getLevelDataForGraph"
 SDMX_CSV = "application/vnd.sdmx.data+csv;version=1.0.0"
 
 
@@ -235,3 +239,64 @@ def _cnbc_day(bar: dict[str, Any]) -> pd.Timestamp | None:
         return pd.Timestamp(int(float(bar.get("tradeTimeinMills") or "")), unit="ms")
     except (TypeError, ValueError):
         return None  # NaT once in the index: dropped by clean_series
+
+
+# ----------------------------------------------------------------------- MSCI
+class MsciClient(_CsvClient):
+    """MSCI end-of-day index levels (JSON), keyless.
+
+    Key ``<code>[/<variant>/<currency>]``: ``891800`` (MSCI EM), ``990100`` (MSCI World);
+    variant ``STRD`` (price, default), ``NETR`` (net return), ``GRTR`` (gross return);
+    currency ``USD`` by default.
+    """
+
+    source = "MSCI"
+    default_url = MSCI_URL
+
+    def fetch(self, key: str, start: date, end: date) -> pd.Series:
+        code, variant, currency = parse_msci_key(key)
+        response = get_with_retry(
+            self._session, self._base_url, timeout_s=self._timeout_s,
+            max_retries=self._max_retries, backoff_s=1.0, source=self.source,
+            params={"currency_symbol": currency, "index_variant": variant,
+                    "start_date": f"{start:%Y%m%d}", "end_date": f"{end:%Y%m%d}",
+                    "data_frequency": "DAILY", "index_codes": code},
+        )
+        if response.status_code == 404:
+            return clean_series(None)
+        if response.status_code >= 400:
+            raise DataProviderError(f"MSCI HTTP {response.status_code} for {key}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise DataProviderError(f"MSCI returned no JSON for {key}") from exc
+        return _window(parse_msci_levels(payload, key), start, end)
+
+
+def parse_msci_key(key: str) -> tuple[str, str, str]:
+    parts = [p.strip().upper() for p in key.split("/")]
+    code = parts[0]
+    if not code.isdigit():
+        raise DataProviderError(f"invalid MSCI index code {key!r} (expected e.g. 891800)")
+    variant = parts[1] if len(parts) > 1 and parts[1] else "STRD"
+    currency = parts[2] if len(parts) > 2 and parts[2] else "USD"
+    return code, variant, currency
+
+
+def parse_msci_levels(payload: Any, key: str = "") -> pd.Series:
+    """``indexes.INDEX_LEVELS[] = {level_eod, calc_date: YYYYMMDD}`` -> level by date."""
+    if isinstance(payload, dict) and payload.get("error_message"):
+        raise DataProviderError(f"MSCI: {payload['error_message']} ({key})")
+    indexes = payload.get("indexes") if isinstance(payload, dict) else None
+    rows = indexes.get("INDEX_LEVELS") if isinstance(indexes, dict) else None
+    if rows is None:
+        raise DataProviderError(f"unexpected MSCI payload for {key}")
+    dates, levels = [], []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        stamp = str(row.get("calc_date") or "")
+        if len(stamp) == 8 and stamp.isdigit():
+            dates.append(pd.Timestamp(f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:]}"))
+            levels.append(row.get("level_eod"))
+    return clean_series(pd.Series(levels, index=pd.DatetimeIndex(dates), dtype="object"))

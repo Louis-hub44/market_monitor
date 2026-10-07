@@ -1,6 +1,6 @@
 # Règles d'alerte du Market Monitor.
 #
-# type     : zscore | level | change | stale
+# type     : zscore | level | change | stale | suspect
 # instruments / instrument : identifiants, "*", "class:...", "group:...", "watchlist:..."
 # severity : info | warning | critical
 #
@@ -93,6 +93,14 @@ rules:
     severity: warning
 
   # ----------------------------------------------------- qualité de données
+  # Une donnée suspecte (|z 1J| hors norme ou écart avec une seconde source) ne déclenche
+  # aucune alerte de marché : elle est signalée ici, pour vérification.
+  - id: suspect_data
+    name: Donnée suspecte
+    type: suspect
+    instruments: ["*"]
+    severity: warning
+
   - id: stale_daily_macro
     name: Donnée périmée dans la daily macro
     type: stale

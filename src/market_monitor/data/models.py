@@ -17,13 +17,16 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from datetime import date, datetime
 from enum import StrEnum
+from typing import TypeAlias
 
 import pandas as pd
 
 from market_monitor.exceptions import InvalidRequestError
 
-DateLike = str | date | datetime | pd.Timestamp
+DateLike: TypeAlias = str | date | datetime | pd.Timestamp
 NO_DATA = "no data returned"
+#: fallback chain separator in native tickers: ``"cnbc:DE10Y-DE|bbk:..."``
+CHAIN_SEP = "|"
 INDEX_NAME = "date"
 SNAPSHOT_COLUMNS = ("value", "as_of")
 
@@ -104,6 +107,33 @@ class HistoryRequest:
         return cls(normalize_tickers(tickers), to_date(start), to_date(end), to_field(field))
 
 
+def chain_alternatives(ticker: str) -> list[str]:
+    """Alternatives of a fallback chain ``a|b|c`` (a plain ticker is a one-element chain)."""
+    return [a.strip() for a in ticker.split(CHAIN_SEP) if a.strip()] or [ticker]
+
+
+def is_chain(ticker: str) -> bool:
+    return len(chain_alternatives(ticker)) > 1
+
+
+def resolve_origin(ticker: str, origin: str | None) -> str:
+    """The alternative of ``ticker`` that served; the preferred one when unknown.
+
+    A provider that does not resolve chains reports the chain itself (or nothing): the
+    first alternative is then assumed.
+    """
+    alternatives = chain_alternatives(ticker)
+    return origin if origin in alternatives else alternatives[0]
+
+
+def fallback_origin(ticker: str, origin: str | None) -> str | None:
+    """``origin`` when it is a fallback (not the preferred, first) alternative of ``ticker``."""
+    if origin is None or not is_chain(ticker):
+        return None
+    resolved = resolve_origin(ticker, origin)
+    return None if resolved == chain_alternatives(ticker)[0] else resolved
+
+
 def empty_frame(columns: Iterable[str] = ()) -> pd.DataFrame:
     """Empty history frame respecting the data contract."""
     return pd.DataFrame(
@@ -121,12 +151,16 @@ class HistoryResult:
         warnings: ticker -> message, for tickers whose data is degraded
             (stale cache, partial refresh...).
         sources: ticker -> name of the provider that actually served it.
+        origins: ticker -> native ticker that actually served it: the alternative of a
+            fallback chain ``a|b`` (defaults to the ticker itself). A series is never
+            made of two origins - see :mod:`market_monitor.data.cached_provider`.
     """
 
     data: pd.DataFrame
     errors: dict[str, str] = dc_field(default_factory=dict)
     warnings: dict[str, str] = dc_field(default_factory=dict)
     sources: dict[str, str] = dc_field(default_factory=dict)
+    origins: dict[str, str] = dc_field(default_factory=dict)
 
     @property
     def missing(self) -> list[str]:

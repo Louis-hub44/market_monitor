@@ -9,6 +9,13 @@ from typing import Any
 
 import yaml
 
+from market_monitor.export.display import (
+    CHANGE_UNITS,
+    DEFAULT_LINE,
+    DEFAULT_STYLE,
+    LineFormat,
+    NumberStyle,
+)
 from market_monitor.referential import Referential, ReferentialError
 
 EXPORTABLE_COLUMNS = ("chg_1d", "chg_1w", "chg_mtd", "chg_ytd")
@@ -18,6 +25,12 @@ EXPORTABLE_COLUMNS = ("chg_1d", "chg_1w", "chg_mtd", "chg_ytd")
 class Section:
     title: str
     instruments: tuple[str, ...]
+    lines: tuple[LineFormat, ...] = ()  # parallel to ``instruments`` (empty = defaults)
+
+    def line(self, instrument_id: str) -> LineFormat:
+        if instrument_id in self.instruments and self.lines:
+            return self.lines[self.instruments.index(instrument_id)]
+        return DEFAULT_LINE
 
 
 @dataclass(frozen=True)
@@ -36,6 +49,7 @@ class DailyMacroLayout:
     columns: tuple[str, ...]
     movers: MoversRule
     file_prefix: str = "daily_macro"
+    style: NumberStyle = DEFAULT_STYLE
 
     @property
     def section_ids(self) -> tuple[str, ...]:
@@ -73,14 +87,76 @@ def layout_from_dict(raw: Mapping[str, Any], referential: Referential) -> DailyM
         columns=columns,
         movers=_movers(raw.get("movers") or {}, referential),
         file_prefix=prefix,
+        style=_style(raw.get("format") or {}),
     )
 
 
+LINE_KEYS = {"id", "label", "decimals", "suffix", "change", "change_decimals"}
+SECTION_DEFAULT_KEYS = ("decimals", "suffix", "change", "change_decimals")
+
+
 def _section(raw: Any, referential: Referential, index: int) -> Section:
+    """Entries are ids / selectors, or ``{id: X, label:, decimals:, suffix:, change:, ...}``."""
     if not isinstance(raw, Mapping) or not raw.get("title") or not raw.get("instruments"):
         raise ReferentialError(f"sections[{index}] needs a title and instruments")
-    ids = referential.resolve(raw["instruments"], context=f"daily-macro section {raw['title']!r}")
-    return Section(str(raw["title"]), ids)
+    where = f"daily-macro section {raw['title']!r}"
+    entries = raw["instruments"] if isinstance(raw["instruments"], list) else [raw["instruments"]]
+    defaults = {k: raw[k] for k in SECTION_DEFAULT_KEYS if k in raw}
+    ids: list[str] = []
+    lines: list[LineFormat] = []
+    for entry in entries:
+        if isinstance(entry, Mapping):
+            unknown = set(entry) - LINE_KEYS
+            if "id" not in entry or unknown:
+                raise ReferentialError(f"{where}: line {dict(entry)} needs 'id' (allowed keys: "
+                                       f"{sorted(LINE_KEYS)})")
+            resolved = referential.resolve([str(entry["id"])], context=where)
+            if len(resolved) != 1:
+                raise ReferentialError(f"{where}: {entry['id']!r} must name one instrument")
+            options = {**defaults, **{k: v for k, v in entry.items() if k != "id"}}
+        else:
+            resolved = referential.resolve([entry], context=where)
+            options = dict(defaults)
+        for instrument_id in resolved:
+            if instrument_id not in ids:
+                ids.append(instrument_id)
+                lines.append(_line_format(options, where))
+    return Section(str(raw["title"]), tuple(ids), tuple(lines))
+
+
+def _line_format(options: Mapping[str, Any], where: str) -> LineFormat:
+    for key in ("decimals", "change_decimals"):
+        value = options.get(key)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)
+                                  or not 0 <= value <= 6):
+            raise ReferentialError(f"{where}: {key} must be an integer between 0 and 6")
+    change = options.get("change")
+    if change is not None and change not in CHANGE_UNITS:
+        raise ReferentialError(f"{where}: change must be one of {CHANGE_UNITS}")
+    label, suffix = options.get("label"), options.get("suffix")
+    return LineFormat(
+        label=str(label) if label else None,
+        decimals=options.get("decimals"),
+        suffix=str(suffix) if suffix is not None else None,
+        change_unit=change,
+        change_decimals=options.get("change_decimals"),
+    )
+
+
+def _style(raw: Any) -> NumberStyle:
+    if not isinstance(raw, Mapping):
+        raise ReferentialError("daily-macro format must be a mapping")
+    unknown = set(raw) - {"thousands_separator", "compact_units", "bp_unit"}
+    if unknown:
+        raise ReferentialError(f"unknown format options {sorted(unknown)}")
+    bp_unit = str(raw.get("bp_unit", DEFAULT_STYLE.bp_unit)).strip()
+    if not bp_unit:
+        raise ReferentialError("format.bp_unit cannot be empty")
+    return NumberStyle(
+        thousands_separator=bool(raw.get("thousands_separator", DEFAULT_STYLE.thousands_separator)),
+        compact_units=bool(raw.get("compact_units", DEFAULT_STYLE.compact_units)),
+        bp_unit=bp_unit,
+    )
 
 
 def _movers(raw: Mapping[str, Any], referential: Referential) -> MoversRule:

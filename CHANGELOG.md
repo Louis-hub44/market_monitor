@@ -1,5 +1,52 @@
 # Historique des versions
 
+## 1.4.0 — format de la revue, MSCI EM officiel, iTraxx
+- **Daily macro au format de la revue** : bandeaux Indices (Euro Stoxx 50, CAC 40, S&P 500,
+  Nasdaq 100, Nikkei 225, CSI 300), Taux 10 ans par pays (États-Unis, Allemagne, France, Italie,
+  Royaume-Uni, Japon), Marchés clés (Brent, EUR/USD, VIX, MSCI EM, Or, Bitcoin) et nouveau
+  bandeau Spreads (OAT-Bund, iTraxx Main, iTraxx Crossover) ; DAX, FTSE MIB et BTP-Bund retirés
+  des bandeaux (toujours dans le dashboard). Variation 1J seule.
+- **Options d'affichage** dans `daily_macro.yaml` : `format` (séparateur de milliers, unités
+  collées, « bps »/« bp ») et, par ligne ou par bandeau, `label`, `decimals`, `suffix`,
+  `change` (VIX en %), `change_decimals` ; appliquées au texte, au PNG et à l'Excel. Par défaut,
+  rendu inchangé.
+- **MSCI EM** : niveau officiel MSCI (`msci:891800`, ~1 742) au lieu de l'ETF EEM ; secours
+  sur le future ICE `MME=F`, signalé comme proxy seulement quand il sert (proxy par alternative
+  d'une chaîne). Nouvelle source `msci:` (indices MSCI, variantes prix / net / brut).
+- Nouveaux instruments : CSI 300, Gilt 10 ans et JGB 10 ans (CNBC puis Stooq hors Bloomberg).
+- **Saisie manuelle** (provider `manual`, fichier `data/manual_quotes.csv`) pour l'iTraxx sans
+  Bloomberg : encart dans la vue *Daily macro*, commandes `market-monitor quote set | list |
+  import | delete`, import d'un historique Excel ; Bloomberg reste prioritaire.
+- PNG : largeur de tuile identique dans tous les bandeaux, hauteur ajustée au nombre de colonnes.
+- Correctif de test : le script de page réelle ne remplace plus `MarketMonitor.from_settings`
+  pour les tests suivants.
+- 299 tests (19 nouveaux), 95 % de couverture.
+
+## 1.3.0 — fiabilité de la revue publiée
+- **Cache : une série, une source.** Une chaîne de secours `a|b` ne recolle plus deux sources :
+  le cache mémorise l'alternative qui a servi et recharge toute la fenêtre quand une autre
+  répond (avant : faux mouvement de plusieurs pb à la jointure, sans avertissement). La source
+  préférée reprend la main dès qu'elle revient ; les caches v1.2 des chaînes sont reconstruits
+  une fois. L'avertissement « source de secours » n'est plus perdu par le cache.
+- **Mouvements suspects** : un 1J à plus de 8 écarts-types (`quality.suspect_abs_z`) est traité
+  comme une donnée à vérifier, pas comme un mouvement.
+- **Contrôle croisé** des lignes publiées et des candidats aux mouvements marquants avec une
+  seconde source (autre provider ou autre alternative de la chaîne) : écart de niveau ou de 1J
+  → ligne suspecte ; un spread hérite d'une jambe suspecte.
+- **Changements de contrat** Brent, WTI et TTF (champ `roll` du référentiel, calendriers ICE /
+  NYMEX / ICE Endex) : 1J et 1S signalés, jours de roll exclus de la volatilité.
+- **Courbe US via CNBC** en tête de chaîne (`cnbc:US2Y|fred:DGS2|2YY=F`, `cnbc:US10Y|^TNX`…) :
+  une seule source et une seule date pour les pentes 2s10s et 5s30s.
+- **Jambes décalées** : un spread ou une pente dont une jambe est en retard le signale.
+- Lignes suspectes ou en changement de contrat (†) : exclues des mouvements marquants,
+  neutres dans la heatmap, sans alerte de marché ; nouvelle règle d'alerte `suspect`.
+- Export : « à vérifier » dans le texte, † et 1J en ambre sur le PNG, ligne surlignée et
+  commentée dans l'Excel, colonnes *Source effective*, *Contrôle 2e source*, *Suspect*,
+  *Roll 1J* et *À vérifier* dans *Données* ; section « À vérifier avant diffusion » complète.
+- Dashboard : † et 1J en ambre dans les tableaux, rubrique « À vérifier avant diffusion » dans
+  *Qualité des données*, mouvements marquants contrôlés comme dans l'export.
+- 280 tests (29 nouveaux), dont un scénario de bout en bout sur le référentiel complet.
+
 ## 1.2.3 — lignes Bloomberg seules masquées
 - Un instrument qu'aucun provider actif ne sert (iTraxx sans Bloomberg) est retiré des
   watchlists, de l'historique, des corrélations, de l'export daily macro et des alertes ; il

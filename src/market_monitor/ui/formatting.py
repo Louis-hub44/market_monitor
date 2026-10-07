@@ -7,6 +7,7 @@ import textwrap
 import pandas as pd
 from pandas.io.formats.style import Styler
 
+from market_monitor.analytics.quality import needs_check
 from market_monitor.data.quality import to_float
 from market_monitor.text_format import (  # re-exported for the UI
     CHANGE_COLUMNS,
@@ -20,6 +21,9 @@ from market_monitor.text_format import (  # re-exported for the UI
     short_date,
 )
 from market_monitor.ui import theme
+
+#: mark of a line whose 1J must be checked (suspect print, contract roll) - same as the PNG
+CHECK_MARK = "\u2020"
 
 
 def tile_label(name: str, width: int = 17) -> str:
@@ -42,7 +46,8 @@ def display_table(table: pd.DataFrame) -> pd.DataFrame:
     groups = table["group"].where(table["group"] != table["group"].shift(), "")
     out = pd.DataFrame(index=table.index)
     out["Groupe"] = groups
-    out["Instrument"] = table["name"]
+    out["Instrument"] = [f"{name} {CHECK_MARK}" if needs_check(row) else name
+                         for name, (_, row) in zip(table["name"], table.iterrows(), strict=True)]
     out["Niveau"] = table.apply(format_level, axis=1)
     out["Date"] = table["level_date"].map(short_date)
     for col in CHANGE_COLUMNS:
@@ -73,6 +78,11 @@ def style_table(display: pd.DataFrame, table: pd.DataFrame, clip: float = 3.0) -
                 styles.at[idx, label] = css
         stale = table["stale"].reindex(display.index).fillna(True).astype(bool)
         styles.loc[stale] = styles.loc[stale] + f" color: {theme.MUTED}; font-style: italic;"
+        one_day = change_labels[0] if change_labels else None
+        for idx in display.index:  # suspect move or contract roll: amber, not a market colour
+            if one_day and needs_check(table.loc[idx]):
+                styles.at[idx, one_day] = (f"color: {theme.TEXT}; font-weight: 600; "
+                                           f"background-color: {theme.CHECK_BG};")
         return styles
 
     return display.style.apply(cell_styles, axis=None)

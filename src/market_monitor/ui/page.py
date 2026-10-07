@@ -33,6 +33,8 @@ from market_monitor.config import (
 )
 from market_monitor.exceptions import MarketMonitorError
 from market_monitor.export import DailyMacroLayout, load_layout
+from market_monitor.export.builder import movers_candidates
+from market_monitor.export.layout import MoversRule
 from market_monitor.monitor import MarketMonitor, PerformanceReport
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -50,6 +52,7 @@ from market_monitor.ui.charts import heat_tiles
 from market_monitor.ui.correlation_view import render_correlations
 from market_monitor.ui.daily_macro_view import render_daily_macro
 from market_monitor.ui.formatting import (
+    CHECK_MARK,
     display_table,
     style_table,
 )
@@ -190,15 +193,18 @@ def _rules(_settings: Settings, _monitor: MarketMonitor, stamp: str) -> tuple[Al
 
 
 def _compute_report(_monitor: MarketMonitor, monitor_id: int, watchlist: str, as_of: str,
-                    nonce: int) -> PerformanceReport:
-    return _monitor.performance(watchlist, as_of)
+                    nonce: int, top_movers: int = 6) -> PerformanceReport:
+    """Performance, with the would-be movers cross-checked so a bad print is not shown as one."""
+    report = _monitor.performance(watchlist, as_of)
+    candidates = movers_candidates(report.table, MoversRule(universe=(), count=max(top_movers, 1)))
+    return _monitor.verify(report, candidates)
 
 
 def _load_report(monitor: MarketMonitor, watchlist: str, as_of: date, ui: UiSettings,
                  key: str) -> PerformanceReport | None:
     compute = cached(_compute_report, ui, "Chargement des marchés…")
     try:
-        return compute(monitor, id(monitor), watchlist, as_of.isoformat(), refresh_nonce(key))
+        return compute(monitor, id(monitor), watchlist, as_of.isoformat(), refresh_nonce(key), ui.top_movers)
     except MarketMonitorError as exc:
         st.error(f"Chargement impossible : {exc}")
         return None
@@ -303,12 +309,18 @@ def _table_block(asset_class: str, table: pd.DataFrame, ui: UiSettings) -> None:
 def _diagnostics(report: PerformanceReport) -> None:
     table = report.table
     proxies: dict[str, Any] = {str(k): v for k, v in table["proxy"].dropna().items()}
-    n_issues = len(report.errors) + len(report.warnings) + len(proxies)
+    checks = {k: " ; ".join(v) for k, v in report.checks().items()
+              if k in table.index and pd.notna(table.at[k, "level"])}
+    n_issues = len(report.errors) + len(report.warnings) + len(proxies) + len(checks)
     with st.expander(f"Qualité des données ({n_issues} point(s) d'attention)", expanded=False):
         sources = Counter(SOURCE_LABELS.get(s, s) for s in table["source"].dropna())
         st.caption("Lignes servies par source : "
                    + (", ".join(f"{k} {v}" for k, v in sources.items()) or "aucune") + ".")
+        if checks:
+            st.caption(f"{CHECK_MARK} : variation de séance à vérifier (mouvement suspect ou "
+                       "changement de contrat), exclue des mouvements marquants et des alertes.")
         sections: list[tuple[str, dict[str, Any]]] = [
+            ("À vérifier avant diffusion", checks),
             ("Données manquantes", dict(report.errors)),
             ("Avertissements", dict(report.warnings)),
             ("Proxies utilisés", proxies),

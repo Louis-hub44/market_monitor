@@ -54,7 +54,7 @@ def assemble_frame(series_by_col: Mapping[str, pd.Series], columns: Sequence[str
     cleaned = {c: clean_series(s) for c, s in series_by_col.items()}
     non_empty = {c: s for c, s in cleaned.items() if not s.empty}
     if non_empty:
-        frame = pd.concat(non_empty, axis=1).sort_index()
+        frame = pd.concat(non_empty, axis=1, sort=True)
     else:
         frame = pd.DataFrame(index=pd.DatetimeIndex([], name=INDEX_NAME))
     frame = frame.reindex(columns=list(columns)).astype("float64")

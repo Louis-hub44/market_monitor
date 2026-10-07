@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,7 @@ import yaml
 
 from market_monitor.config import KNOWN_PROVIDERS
 from market_monitor.exceptions import ConfigError
+from market_monitor.rolls import RULES as ROLL_RULES
 
 _ID_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 
@@ -75,11 +76,23 @@ SANITY_BOUNDS = {
 
 @dataclass(frozen=True)
 class TickerSpec:
-    """Native ticker of one provider, with scaling to the referential unit."""
+    """Native ticker of one provider, with scaling to the referential unit.
+
+    ``proxy`` describes a source that is not the instrument itself (ETF, future...); for a
+    fallback chain ``a|b``, ``alt_proxies`` gives it per alternative, so only the
+    alternatives that are proxies are flagged.
+    """
 
     ticker: str
     scale: float = 1.0
     proxy: str | None = None
+    alt_proxies: Mapping[str, str] = field(default_factory=dict)
+
+    def proxy_for(self, alternative: str | None) -> str | None:
+        """Proxy description of the alternative that served (``None`` if it is the instrument)."""
+        if self.proxy:
+            return self.proxy
+        return self.alt_proxies.get(alternative or "")
 
 
 @dataclass(frozen=True)
@@ -103,6 +116,7 @@ class Instrument:
     change: ChangeUnit
     tickers: Mapping[str, TickerSpec]
     derived: DerivedSpec | None = None
+    roll: str | None = None  # contract-roll rule of a generic front-month future
 
     @property
     def is_derived(self) -> bool:
@@ -302,10 +316,14 @@ def _parse_instrument(instrument_id: str, raw: Any, defaults: Mapping[str, Any])
     derived = _parse_derived(merged.get("derived"), f"{where}.derived")
     if bool(tickers) == bool(derived):
         raise ReferentialError(f"{where}: define either tickers or derived (exactly one)")
+    roll = merged.get("roll")
+    if roll is not None and roll not in ROLL_RULES:
+        raise ReferentialError(f"{where}.roll: {roll!r} not in {sorted(ROLL_RULES)}")
     return Instrument(
         id=instrument_id, name=name.strip(), asset_class=asset_class,
         group=str(merged.get("group") or asset_class.value), quote=quote,
         unit=str(merged.get("unit", "")), change=change, tickers=tickers, derived=derived,
+        roll=roll,
     )
 
 
@@ -320,6 +338,12 @@ def _parse_ticker(spec: Any, where: str) -> TickerSpec:
     if isinstance(scale, bool) or not isinstance(scale, (int, float)) or scale == 0:
         raise ReferentialError(f"{where}: scale must be a non-zero number")
     proxy = spec.get("proxy")
+    if isinstance(proxy, Mapping):
+        alternatives = [a.strip() for a in ticker.split("|")]
+        unknown = [str(k) for k in proxy if str(k) not in alternatives]
+        if unknown:
+            raise ReferentialError(f"{where}.proxy: {unknown} are not alternatives of {ticker!r}")
+        return TickerSpec(ticker, float(scale), None, {str(k): str(v) for k, v in proxy.items()})
     return TickerSpec(ticker, float(scale), str(proxy) if proxy else None)
 
 

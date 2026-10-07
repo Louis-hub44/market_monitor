@@ -28,7 +28,8 @@ from market_monitor.data.quality import clean_series
 logger = logging.getLogger(__name__)
 
 _META_KEY = b"market_monitor"
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+_READABLE_VERSIONS = {1, 2}  # v1 files carry no origin
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -45,12 +46,17 @@ def safe_name(ticker: str) -> str:
 
 @dataclass(frozen=True)
 class CacheEntry:
-    """Cached series with its coverage window ``[covered_start, covered_end]``."""
+    """Cached series with its coverage window ``[covered_start, covered_end]``.
+
+    ``origin`` is the native ticker that served the whole series (an alternative of a
+    fallback chain); ``None`` for files written before it was recorded.
+    """
 
     series: pd.Series
     covered_start: date
     covered_end: date
     fetched_at: datetime  # tz-aware UTC
+    origin: str | None = None
 
     def __post_init__(self) -> None:
         if self.covered_start > self.covered_end:
@@ -80,7 +86,7 @@ class ParquetCache:
         try:
             table = pq.read_table(path)
             meta = json.loads((table.schema.metadata or {})[_META_KEY])
-            if meta.get("version") != _SCHEMA_VERSION or meta.get("ticker") != ticker:
+            if meta.get("version") not in _READABLE_VERSIONS or meta.get("ticker") != ticker:
                 logger.warning("Ignoring cache file with unexpected metadata: %s", path)
                 return None
             frame = table.to_pandas()
@@ -89,6 +95,7 @@ class ParquetCache:
                 covered_start=date.fromisoformat(meta["covered_start"]),
                 covered_end=date.fromisoformat(meta["covered_end"]),
                 fetched_at=datetime.fromisoformat(meta["fetched_at"]),
+                origin=meta.get("origin"),
             )
         except (OSError, KeyError, ValueError, TypeError, pa.ArrowException) as exc:
             logger.warning("Unreadable cache file %s (%s) - treated as a miss", path, exc)
@@ -115,6 +122,7 @@ class ParquetCache:
                     "covered_start": entry.covered_start.isoformat(),
                     "covered_end": entry.covered_end.isoformat(),
                     "fetched_at": entry.fetched_at.isoformat(),
+                    "origin": entry.origin,
                 }
             ).encode("utf-8")
             pq.write_table(table.replace_schema_metadata(meta), tmp)

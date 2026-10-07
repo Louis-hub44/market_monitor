@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import requests
 
-from market_monitor.config import Settings
+from market_monitor.config import MANUAL_PROVIDER, Settings
 from market_monitor.data.base import DataProvider
 from market_monitor.data.cache import ParquetCache
 from market_monitor.data.cached_provider import CachedProvider
@@ -19,6 +19,7 @@ from market_monitor.data.providers import (
     YahooClient,
 )
 from market_monitor.data.providers.free import default_sources
+from market_monitor.data.providers.manual import ManualProvider, ManualQuotes
 from market_monitor.data.service import MarketDataService
 from market_monitor.exceptions import ConfigError
 from market_monitor.network import build_session, configure_session
@@ -54,6 +55,8 @@ def build_provider(name: str, settings: Settings) -> DataProvider:
             YahooClient(session=build_session(net.insecure_ssl, net.ca_bundle)),
             sources=default_sources(timeout_s=free.timeout_s, session=session),
         )
+    if name == MANUAL_PROVIDER:
+        return ManualProvider(ManualQuotes(settings.manual.file))
     raise ConfigError(f"unknown provider {name!r}")
 
 
@@ -78,8 +81,9 @@ def build_service(settings: Settings) -> MarketDataService:
         if not provider.is_available():
             logger.warning("provider %r unavailable (missing library or API key) - skipped", name)
             continue
-        providers.append(with_cache(provider, settings))
-    if not providers:
+        # manual quotes are read from disk every time: a correction shows immediately
+        providers.append(provider if name == MANUAL_PROVIDER else with_cache(provider, settings))
+    if not any(p.name != MANUAL_PROVIDER for p in providers):
         raise ConfigError(f"no available provider among {list(settings.priority)}")
     logger.info("data providers: %s", [p.name for p in providers])
     return MarketDataService(providers)

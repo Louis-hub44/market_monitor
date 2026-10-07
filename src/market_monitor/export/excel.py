@@ -4,7 +4,11 @@
   ``Données``, so every figure can be audited and recomputes if a level is corrected);
 * ``Mouvements``  : the largest moves of the session;
 * ``Texte``       : the text version, one line per cell;
-* ``Données``     : levels, reference levels and dates per horizon, z-scores, sources.
+* ``Données``     : levels, reference levels and dates per horizon, z-scores, sources,
+  second-source check and the points to check.
+
+A published line that needs checking (suspect move, contract roll) is shaded amber in
+*Daily macro*, with the reason in a cell comment.
 
 Percent changes are stored as fractions (``0.0182`` displayed ``+1.82%``), bp and
 point changes as numbers with a unit in the number format.
@@ -19,6 +23,7 @@ from typing import Any, BinaryIO
 
 import pandas as pd
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -26,7 +31,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from market_monitor.alerts import AlertReport
 from market_monitor.analytics.performance import Horizon
+from market_monitor.analytics.quality import needs_check
 from market_monitor.export.builder import DailyMacroData
+from market_monitor.export.display import DEFAULT_STYLE, NumberStyle
 from market_monitor.export.text import SEVERITY_LABELS, mover_line, render_text
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -47,16 +54,19 @@ CHANGE_FORMATS = {
 DATE_FORMAT = "dd/mm/yyyy"
 DATA_COLUMNS = (
     ["Code", "Instrument", "Classe", "Cotation", "Convention", "Facteur pb", "Niveau", "Date"]
-    + [label for h in Horizon for label in (f"Réf. {HORIZON_LABELS[h]}", f"Date réf. {HORIZON_LABELS[h]}")]
+    + [label for h in Horizon
+       for label in (f"Réf. {HORIZON_LABELS[h]}", f"Date réf. {HORIZON_LABELS[h]}")]
     + ["z 1J", "z 1S", "Source", "Proxy", "Périmé"]
+    + ["Source effective", "Contrôle 2e source", "Suspect", "Roll 1J", "À vérifier"]
 )
+CHECK_FILL = "FCE9C8"  # light amber: line to check before publication
 COL = {name: get_column_letter(k + 1) for k, name in enumerate(DATA_COLUMNS)}
 
 
 def write_excel(data: DailyMacroData, target: str | Path | BinaryIO) -> None:
     """Write the workbook to a path or a binary buffer."""
     wb = Workbook()
-    rows = _data_sheet(wb.create_sheet(DATA_SHEET), data.universe)
+    rows = _data_sheet(wb.create_sheet(DATA_SHEET), data.universe, data.checks)
     _macro_sheet(wb.active, data, rows)
     _movers_sheet(wb.create_sheet("Mouvements"), data, rows)
     _text_sheet(wb.create_sheet("Texte"), render_text(data))
@@ -88,6 +98,31 @@ def change_formula(change_unit: str, row: int, horizon: str) -> str:
     return f'=IF({guard},"",{level}-{base})'
 
 
+def number_format(decimals: int, suffix: str = "", *, thousands: bool = True, sign: bool = False,
+                  percent: bool = False) -> str:
+    """Excel number format: ``(2, " $")`` -> ``#,##0.00" $"``; signed variants for changes."""
+    core = ("#,##0" if thousands else "0") + (f".{'0' * decimals}" if decimals else "")
+    unit = "%" if percent else (f'"{suffix}"' if suffix else "")
+    if not sign:
+        return f"{core}{unit}"
+    return f"+{core}{unit};-{core}{unit};{core}{unit}"
+
+
+def band_level_format(r: pd.Series, style: NumberStyle) -> str:
+    """Level format of a band line (decimals / suffix from the layout)."""
+    return number_format(int(r["level_decimals"]), str(r["level_suffix"]),
+                         thousands=style.thousands_separator)
+
+
+def band_change_format(r: pd.Series, style: NumberStyle) -> str:
+    unit, decimals = str(r["display_unit"]), int(r["change_decimals"])
+    if unit == "pct":
+        return number_format(decimals, thousands=False, sign=True, percent=True)
+    label = style.unit_label(unit)
+    return number_format(decimals, label if style.compact_units else f" {label}",
+                         thousands=False, sign=True)
+
+
 def level_format(asset_class: str, quote: str, level: float) -> str:
     if quote == "yield":
         return '0.000" %"'
@@ -99,7 +134,8 @@ def level_format(asset_class: str, quote: str, level: float) -> str:
 
 
 # ------------------------------------------------------------------- sheets
-def _data_sheet(ws: Worksheet, table: pd.DataFrame) -> dict[str, int]:
+def _data_sheet(ws: Worksheet, table: pd.DataFrame,
+                checks: dict[str, list[str]] | None = None) -> dict[str, int]:
     """Write the audit table; returns ``id -> row``."""
     ws.append(DATA_COLUMNS)
     rows: dict[str, int] = {}
@@ -112,12 +148,15 @@ def _data_sheet(ws: Worksheet, table: pd.DataFrame) -> dict[str, int]:
             values += [r[f"ref_{h}"], r[f"ref_date_{h}"]]
         values += [r["z_1d"], r["z_1w"], SOURCE_LABELS.get(r["source"], r["source"]),
                    r["proxy"], "oui" if r["stale"] else "non"]
+        values += [r.get("origin"), r.get("cross_check") or "non fait",
+                   "oui" if r.get("suspect") else "non", "oui" if r.get("roll_1d") else "non",
+                   _xl_text(" ; ".join((checks or {}).get(str(instrument_id), [])))]
         ws.append([_cell(v) for v in values])
         rows[str(instrument_id)] = k
         for column in [c for c in DATA_COLUMNS if c.startswith("Date")]:
             ws[f"{COL[column]}{k}"].number_format = DATE_FORMAT
     _style_header(ws, 1, len(DATA_COLUMNS))
-    _finish(ws, widths={"A": 14, "B": 26})
+    _finish(ws, widths={"A": 14, "B": 26, COL["Source effective"]: 22, COL["À vérifier"]: 60})
     ws.freeze_panes = "C2"
     return rows
 
@@ -142,24 +181,37 @@ def _macro_sheet(ws: Worksheet, data: DailyMacroData, rows: dict[str, int]) -> N
         first = line + 1
         for instrument_id, r in table.iterrows():
             line += 1
-            _macro_row(ws, line, rows[str(instrument_id)], r, data.columns)
+            _macro_row(ws, line, rows[str(instrument_id)], r, data.columns,
+                       data.checks.get(str(instrument_id), []), data.style)
         _sign_colours(ws, f"C{first}:{get_column_letter(2 + len(data.columns))}{line}")
         line += 2
     _finish(ws, widths={"A": 28, "B": 13} | {get_column_letter(3 + k): 11 for k in range(len(headers))})
 
 
-def _macro_row(ws: Worksheet, line: int, data_row: int, r: pd.Series, columns: tuple[str, ...]) -> None:
-    ws.cell(line, 1, f"={ref('Instrument', data_row)}")
+def _macro_row(ws: Worksheet, line: int, data_row: int, r: pd.Series, columns: tuple[str, ...],
+               checks: list[str] | None = None, style: NumberStyle = DEFAULT_STYLE) -> None:
+    banded = "level_text" in r
+    label = r["label"] if banded and r["label"] != r["name"] else None
+    ws.cell(line, 1, _xl_text(label) if label else f"={ref('Instrument', data_row)}")
     level = ws.cell(line, 2, f'=IF({ref("Niveau", data_row)}="","",{ref("Niveau", data_row)})')
-    level.number_format = level_format(r["asset_class"], r["quote"], _num(r["level"]))
+    level.number_format = (band_level_format(r, style) if banded
+                           else level_format(r["asset_class"], r["quote"], _num(r["level"])))
+    unit = r["display_unit"] if banded else r["change_unit"]
     for k, column in enumerate(columns, start=3):
-        cell = ws.cell(line, k, change_formula(r["change_unit"], data_row, column.removeprefix("chg_")))
-        cell.number_format = CHANGE_FORMATS[r["change_unit"]]
+        cell = ws.cell(line, k, change_formula(unit, data_row, column.removeprefix("chg_")))
+        cell.number_format = band_change_format(r, style) if banded else CHANGE_FORMATS[unit]
     date_cell = ws.cell(line, 3 + len(columns), f'=IF({ref("Date", data_row)}="","",{ref("Date", data_row)})')
     date_cell.number_format = "dd/mm"
     if r["stale"]:
         for c in range(1, 4 + len(columns)):
             ws.cell(line, c).font = Font(name=FONT, italic=True, color=MUTED)
+    if needs_check(r):
+        for c in range(1, 4 + len(columns)):
+            ws.cell(line, c).fill = PatternFill("solid", fgColor=CHECK_FILL)
+        comment = Comment(_xl_text("À vérifier avant diffusion :\n- " + "\n- ".join(checks or [])),
+                          "Market Monitor")
+        comment.width, comment.height = 320, 110
+        ws.cell(line, 1).comment = comment
 
 
 def _movers_sheet(ws: Worksheet, data: DailyMacroData, rows: dict[str, int]) -> None:

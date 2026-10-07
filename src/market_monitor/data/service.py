@@ -70,13 +70,24 @@ class MarketDataService:
         ids = _validate_symbols(symbols)
         request = HistoryRequest.create(ids, start, end, field)
 
+        origins: dict[str, str] = {}
+
         def call(provider: DataProvider, tickers: list[str]) -> tuple[Any, Callable[[str], Any]]:
             result = provider.get_history(tickers, request.start, request.end, request.field)
-            return result, lambda t: _non_empty(result.data[t].dropna())
+
+            def extract(ticker: str) -> pd.Series | None:
+                series = _non_empty(result.data[ticker].dropna())
+                if series is not None:
+                    origins[ticker] = result.origins.get(ticker, ticker)
+                return series
+
+            return result, extract
 
         found, sources, errors, warnings = self._resolve(symbols, ids, call)
+        by_id = {i: origins.get(symbols[i][sources[i]], symbols[i][sources[i]]) for i in sources}
         return HistoryResult(
-            data=assemble_frame(found, ids), errors=errors, warnings=warnings, sources=sources
+            data=assemble_frame(found, ids), errors=errors, warnings=warnings, sources=sources,
+            origins=by_id,
         )
 
     def get_snapshot(self, symbols: SymbolMap) -> SnapshotResult:

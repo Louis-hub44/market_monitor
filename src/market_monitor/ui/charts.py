@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 
 from market_monitor.analytics.comparison import ComparisonResult
 from market_monitor.analytics.performance import ZSCORE_HORIZONS, Horizon
+from market_monitor.analytics.quality import needs_check
 from market_monitor.referential import AssetClass, ChangeUnit
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -19,6 +20,7 @@ from market_monitor.text_format import (
 )
 from market_monitor.ui import theme
 from market_monitor.ui.formatting import (
+    CHECK_MARK,
     tile_label,
 )
 
@@ -38,8 +40,11 @@ def _tile_grid(rows: pd.DataFrame, horizon: Horizon, columns: int) -> tuple[list
         zval = row[f"z_{horizon}"]
         change = format_change(chg, row["change_unit"])
         # a tile with a change but no reliable z-score is drawn neutral (z = 0), not hidden
-        z[r][c] = zval if not math.isnan(zval) else (0.0 if not math.isnan(chg) else None)
-        text[r][c] = f"<b>{tile_label(row['name'])}</b><br>{change}"
+        check = needs_check(row) and horizon is Horizon.D1
+        # a suspect print or a roll jump is drawn neutral: it is not a market move
+        z[r][c] = 0.0 if check else (zval if not math.isnan(zval) else (0.0 if not math.isnan(chg) else None))
+        mark = f" {CHECK_MARK}" if check else ""
+        text[r][c] = f"<b>{tile_label(row['name'])}{mark}</b><br>{change}"
         hover[r][c] = (f"{row['name']}<br>{HORIZON_LABELS[horizon.value]} : {change}"
                        f"<br>z : {fr_number(zval, 2, sign=True)}")
     return z, text, hover

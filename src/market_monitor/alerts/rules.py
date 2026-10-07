@@ -8,7 +8,10 @@ Rule types, all evaluated on the performance table (no extra data request):
   spread in bp, price); with ``cross: true`` only when the last session crossed it;
 * ``change`` : change over 1D / 1W / MTD / YTD above / below / beyond (``abs_above``) a
   threshold in the instrument's convention (% for prices, bp for rates);
-* ``stale``  : last print older than the staleness limit.
+* ``stale``  : last print older than the staleness limit;
+* ``suspect``: a suspect print (|z 1J| far beyond the norm, or a gap with a second source).
+  Suspect prints never raise ``zscore`` / ``level`` / ``change`` alerts, and contract-roll
+  horizons never raise ``zscore`` / ``change`` alerts.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ class RuleKind(StrEnum):
     LEVEL = "level"
     CHANGE = "change"
     STALE = "stale"
+    SUSPECT = "suspect"
 
 
 class Severity(StrEnum):
@@ -122,7 +126,7 @@ def _parse_rule(raw: Any, referential: Referential, index: int) -> AlertRule:
     }
     if kind is RuleKind.ZSCORE:
         return _zscore_rule(raw, common, where)
-    if kind is RuleKind.STALE:
+    if kind in (RuleKind.STALE, RuleKind.SUSPECT):
         return AlertRule(**common)
     condition, threshold = _condition(raw, where)
     if kind is RuleKind.LEVEL:

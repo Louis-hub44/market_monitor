@@ -9,8 +9,9 @@ z-scores, heatmap, historiques, corrélations, alertes et export « daily macro 
 
 **Sommaire** : 1 Démarrage rapide · 2 Routine du matin · 3 Architecture · 4 Configuration ·
 5 Données · 6 Référentiel · 7 Performances · 8 Dashboard · 9 Historique et corrélations ·
-10 Export daily macro · 11 Alertes · 12 Intégration au terminal · 13 Ligne de commande ·
-14 Qualité · 15 Dépannage · 16 Limites et évolutions
+10 Export daily macro · 10.1 Contrôles avant publication · 11 Alertes ·
+12 Intégration au terminal · 13 Ligne de commande · 14 Qualité · 15 Dépannage ·
+16 Limites et évolutions
 
 ---
 
@@ -54,7 +55,8 @@ Dans PyCharm : interpréteur `.venv`, `src` marqué *Sources Root*, pytest comme
    dans `logs\market_monitor.log`, et renvoie le code 3 en cas d'alerte critique.
 2. **Dashboard, vue d'ensemble** : bandeau d'alertes, mouvements marquants classés par
    $|z_{1J}|$, heatmap, tableaux par classe d'actifs.
-3. **Vue Daily macro** : texte prêt à coller (bouton de copie), PNG des bandeaux pour la
+3. **Vue Daily macro** : sans Bloomberg, saisir les iTraxx de la veille dans l'encart
+   « Saisie manuelle » (§ 5.4). Texte prêt à coller (bouton de copie), PNG des bandeaux pour la
    page A4, Excel. Relire la section « À vérifier avant diffusion » (données manquantes,
    périmées ou issues d'un proxy) avant d'envoyer quoi que ce soit.
 4. Au besoin, **Historique** et **Corrélations** pour illustrer un mouvement.
@@ -182,23 +184,33 @@ la section `network` (usage à la maison).
 | `free` | ECB SDMX `ecb:FLOW/KEY` | `ecb:EST/B.EU000A2X2A25.WT` (€STR) |
 | `free` | Stooq `stooq:SYMBOLE` (rendements souverains en %) | `stooq:10dey.b` (Bund 10 ans), `stooq:2fry.b`, `stooq:10ity.b`, `stooq:30esy.b` |
 | `free` | Bundesbank SDMX `bbk:FLOW/KEY` | `bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A` (zéro-coupon 10 ans) |
-| `free` | FRED `fred:SERIE` | `fred:DGS2` (UST 2 ans, publié à J-1) |
+| `free` | FRED `fred:SERIE` | `fred:DGS2` (UST 2 ans, publié à J-1, secours) |
 | `free` | STOXX `stoxx:SYMBOLE` (fichier historique) | `stoxx:v2tx` (VSTOXX) |
-| `free` | CNBC `cnbc:SYMBOLE` (barres quotidiennes, non officiel) | `cnbc:FR10Y-FR`, `cnbc:DE2Y-DE`, `cnbc:IT30Y-IT`, `cnbc:ES5Y-ES` |
+| `free` | CNBC `cnbc:SYMBOLE` (barres quotidiennes, non officiel) | `cnbc:FR10Y-FR`, `cnbc:DE2Y-DE`, `cnbc:IT30Y-IT`, `cnbc:GB10Y-GB`, `cnbc:JP10Y-JP`, `cnbc:US10Y` |
+| `free` | MSCI `msci:CODE[/VARIANTE/DEVISE]` (niveaux de clôture officiels) | `msci:891800` (MSCI EM, prix, USD), `msci:990100/NETR/EUR` |
+| `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER` |
 
 Sans Bloomberg, le fallback gratuit couvre les courbes Bund / OAT / BTP / Bonos (Stooq, une
 seule source pour que les spreads restent cohérents ; la courbe Bundesbank est indiquée en
 commentaire dans `instruments.yaml` en secours pour le Bund), l'UST 2 ans (FRED), le VSTOXX
 (STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Un ticker peut être une
 **chaîne de secours** `a|b` : la première source qui répond l'emporte, un repli est signalé en
-avertissement (taux souverains : CNBC, puis Stooq, puis — Bund seulement — Bundesbank ;
-UST 2 ans : FRED puis future Micro 2Y `2YY=F`). Stooq sert parfois une page anti-robot : elle
+avertissement et en « source de secours » dans les points à vérifier (taux souverains : CNBC,
+puis Stooq, puis — Bund seulement — Bundesbank ; UST : CNBC, puis FRED et le future Micro 2Y
+`2YY=F` pour le 2 ans, les indices CBOE `^FVX` / `^TNX` / `^TYX` pour les autres). Toute la
+courbe US vient ainsi d'une seule source à la même date : avec FRED (publié à J-1) et Yahoo,
+la pente 2s10s affichait la veille sans être marquée. Stooq sert parfois une page anti-robot : elle
 est reconnue et Stooq est alors ignoré.
+**MSCI EM** vient du site MSCI (niveau officiel de l'indice, ~1 742 début octobre 2026) ; l'ETF
+`EEM` (~50 $) n'est plus utilisé. En secours, le future ICE MSCI EM `MME=F` : le proxy est
+déclaré **par alternative** (`proxy: {"MME=F": ...}`), donc signalé seulement quand c'est lui
+qui sert.
 Une source injoignable (pare-feu) est ignorée 10 minutes après le premier échec, au lieu de
 coûter un délai d'attente par ticker. Ces sources n'ont pas de
 clé ni de garantie de service : `market-monitor fetch --provider free --tickers stooq:10fry.b
 --no-cache` vérifie un ticker en une commande. Restent sans source gratuite : les indices
-iTraxx (données Markit sous licence), Bloomberg uniquement. Un instrument qu'aucun provider
+iTraxx (données Markit sous licence), servis par Bloomberg ou par **saisie manuelle** (§ 5.4).
+Un instrument qu'aucun provider
 actif ne sait servir (ou un spread dont une jambe est dans ce cas) est **masqué** des
 watchlists, de l'historique, des corrélations, de l'export et des alertes, au lieu d'apparaître
 en donnée manquante ; il revient automatiquement dès que Bloomberg est disponible.
@@ -208,7 +220,8 @@ sources passent. Si seule la BCE répond, `market-monitor ecb-series FLOW MOTIF`
 séries qu'elle publie (dimension vide = joker, `+` = ou), par exemple
 `market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"` ; une clé trouvée s'utilise ensuite comme
 `ecb:FM/<clé>` dans `instruments.yaml`. Sinon, demander à l'informatique d'ouvrir `stooq.com`,
-`fred.stlouisfed.org`, `api.statistiken.bundesbank.de`, `www.stoxx.com` et `ts-api.cnbc.com`.
+`fred.stlouisfed.org`, `api.statistiken.bundesbank.de`, `www.stoxx.com`, `ts-api.cnbc.com` et
+`app2.msci.com`.
 
 Un provider indisponible (pas de `blpapi`, pas de clé FMP) est ignoré au démarrage ; un
 provider qui tombe en cours de route (Terminal fermé, quota FMP) déclenche le fallback
@@ -258,6 +271,15 @@ $$
 * Un historique « fermé » ($e < d_f$ et $e \le c_e$) n'est **jamais** re-téléchargé.
 * Si le provider tombe, le cache est servi avec un `warning` ; un ticker inconnu n'est
   jamais mis en cache comme « vide ».
+* **Une série, une source.** Pour une chaîne de secours `a|b`, le cache mémorise l'alternative
+  qui a servi (son *origine*). Si un rafraîchissement est servi par une autre alternative
+  (CNBC bloqué, Bundesbank répond), toute la fenêtre est rechargée depuis celle-ci au lieu
+  d'être recollée : deux sources du « même » taux diffèrent de quelques pb (générique contre
+  zéro-coupon), et une série recollée montrait un faux mouvement à la jointure, qui faussait
+  le 1S, le MTD, les z-scores et les spreads. Quand la source préférée revient, la série
+  repasse entièrement sur elle. L'historique ajouté à gauche est demandé à l'origine en
+  cache, et un cache antérieur à la v1.3 (origine inconnue) est reconstruit une fois.
+  Cas couvert par `tests/test_cache_origins.py`.
 
 **Exemple chiffré** ($\tau = 15$ min, $L = 5$ j) — cas couvert par
 `test_ttl_expiry_refreshes_only_the_tail_with_lookback` :
@@ -269,6 +291,32 @@ $$
    ancre $= \min(06/10, 05/10) = 05/10$, début $= 05/10 - 5 = 30/09$ →
    **un seul appel $[30/09, 05/10]$** au lieu de quatre mois.
 4. Requête du 02/03 au 05/10 : seul le trou $[02/03, 31/05]$ est demandé.
+
+### 5.4 Saisie manuelle (iTraxx sans Bloomberg)
+
+Aucune source gratuite ne publie l'iTraxx Europe Main / Crossover 5 ans. Le provider `manual`
+sert des cotations **saisies à la main** (spread de clôture lu sur un écran ou une note
+broker), stockées dans `data/manual_quotes.csv` (`date,ticker,value`, hors Git). Il est
+toujours ajouté en dernier dans `providers.priority` : Bloomberg, quand il est connecté,
+reste prioritaire. Le fichier est relu à chaque calcul (pas de cache) : une correction se voit
+immédiatement.
+
+* **Dashboard**, vue *Daily macro* : encart « Saisie manuelle », ouvert quand une valeur
+  manque pour la dernière séance (date proposée : jour ouvré précédant la date d'arrêté).
+* **Ligne de commande** :
+
+```powershell
+market-monitor quote set ITRX_XOVER 287,5               # date par défaut : jour ouvré précédent
+market-monitor quote set ITRX_MAIN 55.3 --date 2026-10-06
+market-monitor quote list                               # dernières saisies
+market-monitor quote import historique.csv              # date;ITRX_MAIN;ITRX_XOVER (export Excel FR accepté)
+market-monitor quote delete ITRX_MAIN 2026-10-06
+```
+
+La variation 1J apparaît dès deux saisies consécutives ; le z-score demande environ trois
+mois d'historique (importer un historique Excel l'apporte d'emblée). Une saisie oubliée se
+voit comme une cotation périmée (*). Pour rendre saisissable un autre instrument, lui ajouter
+`manual: <IDENTIFIANT>` dans ses `tickers`.
 
 ## 6. Référentiel et conventions
 
@@ -454,12 +502,34 @@ Un seul calcul de performances alimente trois fichiers, `daily_macro_<date>` :
 | Fichier | Contenu | Usage |
 |---|---|---|
 | `.xlsx` | feuilles *Daily macro* (bandeaux), *Mouvements*, *Texte*, *Données* | coller dans la revue, auditer un chiffre |
-| `.png` | les trois bandeaux en tuiles, fond blanc, largeur A4 | insérer tel quel dans le PDF |
+| `.png` | les bandeaux en tuiles, fond blanc, largeur A4 | insérer tel quel dans le PDF |
 | `.txt` | mouvements marquants, une ligne par instrument, points à vérifier | relecture, copier-coller |
 
 **Mise en page** (`config/daily_macro.yaml`) : titres et instruments des bandeaux
-(indices, taux 10 ans, marchés clés), variations affichées (`chg_1d`, `chg_ytd`…), règles des
-mouvements marquants (univers, nombre, seuil $|z_{1J}|$, seuil « fort »).
+(indices, taux 10 ans, marchés clés, spreads), variations affichées (`chg_1d`, `chg_ytd`…),
+règles des mouvements marquants (univers, nombre, seuil $|z_{1J}|$, seuil « fort »).
+
+**Format de la revue** : `format` règle l'écriture des nombres (`thousands_separator: false`
+→ `6272,95` ; `compact_units: true` → `5,27%`, `−5bps` ; `bp_unit: bps`, au singulier « bp »
+quand la variation vaut au plus 1). Chaque ligne d'un bandeau peut porter ses options, et un
+bandeau leur valeur par défaut :
+
+```yaml
+  - title: Taux 10 ans
+    decimals: 2            # décimales du niveau
+    change_decimals: 0     # décimales de la variation
+    instruments:
+      - {id: UST_10Y, label: États-Unis}
+  - title: Marchés clés
+    change_decimals: 1
+    instruments:
+      - {id: GOLD, label: Or, decimals: 0, suffix: " $"}   # 4164 $
+      - {id: VIX, change: pct}                            # VIX en % plutôt qu'en points
+```
+
+Les mêmes conventions s'appliquent au texte, au PNG et aux formats de nombre Excel (où l'unité
+reste « bps »). Un mouvement marquant qui figure dans un bandeau est écrit avec les mêmes
+décimales.
 
 **Excel auditable** : les niveaux de référence et leurs dates sont dans *Données* ; les
 variations de *Daily macro* sont des **formules** sur ces cellules, sous la convention de
@@ -481,15 +551,80 @@ taux, **écartement / resserrement** pour les spreads, « fort(e) » au-delà de
 - Spread OAT-Bund 10 ans : resserrement de 2,3 pb à 72,7 pb (z −1,6)
 ```
 
-La section « À vérifier avant diffusion » liste les lignes affichées dont la donnée manque,
-est périmée ou vient d'un proxy : rien ne part dans la revue sans avoir été vu.
+La section « À vérifier avant diffusion » liste, pour les lignes publiées (bandeaux et
+mouvements marquants), tout ce qui doit être vu avant envoi : donnée manquante ou périmée,
+mouvement suspect, changement de contrat, proxy, source de secours, jambes décalées (§ 10.1).
+
+### 10.1 Contrôles avant publication
+
+![Bandeaux avec lignes à vérifier (données synthétiques)](docs/daily_macro_controles.png)
+
+Un chiffre faux dans une revue diffusée coûte plus cher qu'un chiffre en retard. Quatre
+garde-fous, paramétrés dans la section `quality` de `config.yaml` :
+
+**1. Mouvement suspect (z-score hors norme).** Un 1J de $|z_{1J}| \ge 8$ (`suspect_abs_z`) que
+n'explique aucun changement de contrat est bien plus souvent une mauvaise cotation (tick
+aberrant, erreur d'échelle) qu'un mouvement de marché. La ligne est marquée *suspecte*.
+
+**2. Contrôle croisé avec une seconde source.** Les lignes publiées (bandeaux, et deux fois
+plus de candidats aux mouvements marquants que de places) sont comparées, à la même date
+$t_0$, à un autre provider ou à une autre alternative de leur chaîne (CNBC contre FRED…) :
+
+$$
+\text{écart de niveau : } \Big|\frac{L_A}{L_B} - 1\Big| > 5\,\% \ \text{(prix)}
+\quad\text{ou}\quad k\,|L_A - L_B| > 25 \text{ pb (taux, spreads)}
+$$
+
+$$
+\text{écart de 1J : } \frac{|\Delta_A - \Delta_B|}{\hat\sigma_{1J}} > 4
+$$
+
+les deux variations étant mesurées entre les deux mêmes dates. Un écart rend la ligne
+suspecte (« 1J +4,50 % contre +0,10 % sur Yahoo »), et un spread ou une pente est suspect dès
+qu'une de ses jambes l'est. Les proxies ne sont jamais comparés (un ETF n'est pas son indice).
+Une seconde source qui ne répond pas, ou pas pour $t_0$, laisse la ligne « indisponible »,
+jamais « ok ». Au plus deux sources sont essayées par ligne (un pare-feu ne coûte pas plus de
+deux délais d'attente). `cross_check: false` désactive le contrôle.
+
+**3. Changements de contrat.** Les génériques front-month (Brent, WTI, TTF : champ `roll` du
+référentiel) sautent à l'échéance d'un contrat au suivant ; ce saut est un écart de calendrier,
+pas un mouvement. Calendriers des bourses (jours ouvrés lundi-vendredi) :
+
+| Règle | Dernier jour de cotation du front-month | Jour de changement |
+|---|---|---|
+| `brent` (ICE) | dernier jour ouvré du 2e mois précédant l'échéance | 1er jour ouvré du mois |
+| `wti` (NYMEX CL) | 3 jours ouvrés avant le 25 du mois précédent (4 si le 25 est chômé) | jour ouvré suivant |
+| `ttf` (ICE Endex) | 2 jours ouvrés avant le 1er jour du mois de livraison | dernier jour ouvré du mois |
+
+Les jours fériés des bourses n'étant pas modélisés, le jour suivant est aussi couvert. Ces
+jours sont exclus de l'estimation de $\hat\sigma$, et un 1J (ou 1S) qui en contient un est
+marqué *changement de contrat*.
+
+**4. Jambes décalées.** Un spread ou une pente n'est calculé que sur les dates communes à ses
+jambes ; si l'une est en retard, la ligne le dit (« dernière date commune 30/09, Bund 10 ans
+au 01/10 ») au lieu d'afficher discrètement la veille.
+
+**Effets** d'une ligne suspecte ou en changement de contrat (marque † partout) :
+
+* exclue des **mouvements marquants** (dashboard et export) et dessinée en neutre dans la heatmap ;
+* aucune alerte `zscore` / `change` (ni `level` si suspecte) : la règle `suspect` la signale à
+  la place, pour vérification ;
+* dans l'export : « à vérifier » en fin de ligne dans le texte, † et 1J en ambre sur le PNG avec
+  une note de bas de page, ligne surlignée en ambre dans l'Excel avec la raison en commentaire,
+  et colonnes *Source effective*, *Contrôle 2e source*, *Suspect*, *Roll 1J* et *À vérifier*
+  dans la feuille *Données* ;
+* dans le dashboard : † sur la ligne, 1J en ambre, détail dans *Qualité des données*.
+
+Cas couverts par `tests/test_publication_safeguards.py` et, de bout en bout sur le référentiel
+complet (mauvaise cotation sur le S&P 500, changement de contrat Brent, OAT 10 ans en retard
+d'une séance), par `tests/test_publication_end_to_end.py`.
 
 ## 11. Alertes
 
 ![Vue Alertes (données synthétiques)](docs/alertes.png)
 
 Les règles (`config/alerts.yaml`) sont évaluées sur le tableau de performances, sans
-requête supplémentaire. Quatre types :
+requête supplémentaire. Cinq types :
 
 | Type | Condition | Exemple |
 |---|---|---|
@@ -497,6 +632,7 @@ requête supplémentaire. Quatre types :
 | `level` | $L_0 > s$ ou $L_0 < s$, en unité du référentiel ; `cross` : seulement si $L_{1J} \le s < L_0$ (franchissement sur la séance) | spread BTP-Bund $> 150$ pb ; UST 2s10s passe sous 0 |
 | `change` | $\Delta_h > s$, $\Delta_h < s$ ou $\lvert\Delta_h\rvert > s$, dans la convention (% / pb / pts), $h \in$ 1J, 1S, MTD, YTD | Brent $\lvert\Delta_{1J}\rvert > 4\%$ ; Bund 10 ans $\lvert\Delta_{1S}\rvert > 15$ pb |
 | `stale` | dernière cotation trop ancienne | donnée périmée dans la daily macro |
+| `suspect` | mouvement suspect ou écart entre sources (§ 10.1) | donnée à vérifier avant diffusion |
 
 Garde-fous :
 
@@ -505,6 +641,9 @@ Garde-fous :
   pb) : le seuil serait ambigu, le chargement le refuse.
 * Les lignes périmées ne déclenchent ni `zscore` ni `change` (pas d'alerte sur un vieux
   mouvement) ; une ligne sans donnée est listée comme « non évaluée », jamais comme calme.
+* Une donnée suspecte ne déclenche aucune alerte de marché (`zscore`, `level`, `change`) :
+  seule la règle `suspect` la signale. Un horizon qui contient un changement de contrat ne
+  déclenche ni `zscore` ni `change` (un niveau reste valable).
 * Tri : gravité (critique, attention, info), puis ordre des règles, puis ampleur.
 
 Où les voir :
@@ -566,6 +705,7 @@ quelles par les futurs modules courbes de taux et surfaces de volatilité.
 | `market-monitor snapshot --provider P --tickers …` | dernier cours brut |
 | `market-monitor check-referential` | valide le référentiel et les watchlists |
 | `market-monitor cache-clear [--provider P]` | vide le cache parquet |
+| `market-monitor quote set\|list\|import\|delete …` | saisie manuelle (iTraxx sans Bloomberg, § 5.4) |
 
 Codes retour : 0 succès, 1 données manquantes, 2 erreur de configuration ou d'usage,
 3 seuil d'alerte atteint. La sortie est forcée en UTF-8 (une redirection vers un fichier
@@ -575,7 +715,7 @@ sous Windows échouerait sinon sur « − » ou les espaces fines).
 
 ```powershell
 scripts\check.bat                        # ruff + mypy + pytest
-pytest --cov=market_monitor              # 204 tests, ~25 s, 94 % de couverture
+pytest --cov=market_monitor              # 299 tests, ~30 s, 95 % de couverture
 ```
 
 * **Tous les tests sont hors ligne** : faux providers, faux module `blpapi` (sessions,
@@ -600,7 +740,10 @@ pytest --cov=market_monitor              # 204 tests, ~25 s, 94 % de couverture
 | FMP 402 / 403 sur un symbole | symbole hors abonnement : ligne servie par le fallback gratuit |
 | Avertissement « implausible level » | unité de la source différente du référentiel : ajuster `scale` du ticker |
 | Ligne en italique grisé | dernière cotation de plus de 2 jours ouvrés : jour férié local, ticker à vérifier |
-| Saut sur Brent, WTI, cuivre | roll du contrat générique front-month |
+| † sur une ligne | variation de séance à vérifier : mouvement suspect, écart avec une seconde source ou changement de contrat (détail dans *Qualité des données* / « À vérifier avant diffusion ») |
+| « source de secours » dans les points à vérifier | la source préférée de la chaîne n'a pas répondu ; toute la série vient de la source de secours (§ 5.3) |
+| Contrôle 2e source « indisponible » | aucune autre source n'a répondu pour la même date (pare-feu, source en retard) : vérifier à la main |
+| Saut sur cuivre ou or | roll du contrat générique front-month (non modélisé pour ces deux contrats) |
 | « certificate verify failed » / « self signed certificate » sur toutes les sources | proxy d'inspection SSL : `network.ca_bundle` (ou, réseau de confiance, `insecure_ssl`), § 4 |
 | Erreur `zoneinfo` sous Windows | `pip install tzdata` |
 | Thème du dashboard absent | lancer via `market-monitor ui` ou depuis la racine du projet |
@@ -612,15 +755,23 @@ Journal : `logs\market_monitor.log` (tournant, 1 Mo × 5), niveau réglable dans
 
 **Limites connues**
 
-* Le fallback gratuit ne couvre ni les courbes souveraines pays quotidiennes, ni l'iTraxx,
-  ni un MOVE fiable ; quelques tickers sont marqués « à vérifier » dans le référentiel
-  (TTF, iTraxx, ETF sectoriels).
+* Le fallback gratuit ne couvre ni l'iTraxx (saisie manuelle) ni un MOVE fiable ; quelques
+  tickers sont marqués « à vérifier » dans le référentiel (TTF, iTraxx, ETF sectoriels).
+* Les sources MSCI (`msci:891800`) et CNBC Gilt / JGB (`cnbc:GB10Y-GB`, `cnbc:JP10Y-JP`) n'ont
+  pas pu être testées depuis l'environnement de développement : à confirmer avec *Tester la
+  connexion* ; en cas d'échec, la chaîne retombe sur le future `MME=F` (proxy signalé) ou Stooq.
 * Le z-score suppose des variations i.i.d. : en régime de volatilité élevée, un $\sigma$ sur
   un an sous-estime le risque courant et gonfle les $|z|$ (queues épaisses).
 * Les corrélations quotidiennes entre fuseaux horaires éloignés sont biaisées vers zéro
   (utiliser la fréquence hebdomadaire).
 * Le dashboard travaille sur des cours de clôture et le dernier print disponible, pas sur
   un flux temps réel.
+* Calendriers de changement de contrat approchés (jours fériés des bourses ignorés, d'où une
+  fenêtre de deux jours) et limités au Brent, au WTI et au TTF ; cuivre et or non couverts.
+* Les symboles CNBC de la courbe US (`US2Y`, `US5Y`, `US10Y`, `US30Y`) sont à confirmer avec
+  *Tester la connexion* ; en cas d'échec, la chaîne retombe sur les sources précédentes.
+* Derrière un pare-feu strict, le contrôle croisé n'a souvent pas de seconde source : il reste
+  « indisponible » et seul le seuil de z-score protège la publication.
 
 **Évolutions possibles**
 

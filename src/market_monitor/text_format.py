@@ -17,7 +17,8 @@ ASSET_CLASS_LABELS = {
     "equity": "Actions", "rates": "Taux", "credit": "Crédit", "fx": "Change",
     "commodities": "Matières premières", "volatility": "Volatilité", "crypto": "Crypto",
 }
-SOURCE_LABELS = {"bloomberg": "BBG", "fmp": "FMP", "free": "Libre", "derived": "Calcul"}
+SOURCE_LABELS = {"bloomberg": "BBG", "fmp": "FMP", "free": "Libre", "manual": "Saisie",
+                 "derived": "Calcul"}
 CHANGE_UNIT_LABELS = {"pct": "%", "bp": "pb", "abs": "pts"}
 CHANGE_DECIMALS = {"pct": 2, "bp": 1, "abs": 2}
 HORIZON_LABELS = {"1d": "1J", "1w": "1S", "mtd": "MTD", "ytd": "YTD"}

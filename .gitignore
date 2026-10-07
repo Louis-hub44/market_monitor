@@ -8,3 +8,4 @@ __pycache__/
 .idea/
 exports/
 logs/
+data/manual_quotes.csv

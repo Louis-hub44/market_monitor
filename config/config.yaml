@@ -3,7 +3,8 @@
 providers:
   # Ordre de priorité = chaîne de fallback, instrument par instrument.
   # Surchargeable par la variable d'environnement MARKET_MONITOR_PROVIDERS.
-  priority: [bloomberg, fmp, free]
+  # « manual » (cotations saisies à la main) est toujours ajouté en dernier.
+  priority: [bloomberg, fmp, free, manual]
 
   bloomberg:            # Desktop API (Terminal ouvert et loggé)
     host: localhost
@@ -18,6 +19,9 @@ providers:
   free:
     ecb_base_url: https://data-api.ecb.europa.eu/service/data
     timeout_s: 20
+
+  manual:               # cotations saisies à la main (iTraxx sans Bloomberg...)
+    file: ../data/manual_quotes.csv
 
 network:
   # Proxy d'inspection SSL d'entreprise (Zscaler, Netskope...) : « certificate verify
@@ -49,6 +53,13 @@ analytics:
   zscore_demean: true             # false -> mu = 0 (mouvement exprimé en sigmas)
   stale_bdays: 2                  # dernier print plus vieux (jours ouvrés) -> ligne "stale"
   max_reference_gap_days: 7       # print de référence trop éloigné de sa date cible -> NaN
+
+quality:                          # garde-fous avant publication (export daily macro)
+  suspect_abs_z: 8.0              # |z 1J| au-delà : donnée suspecte, à vérifier (pas un mouvement)
+  cross_check: true               # lignes publiées comparées à une seconde source
+  cross_check_max_dev_z: 4.0      # écart de 1J entre sources, en écarts-types quotidiens
+  cross_check_level_tol_pct: 5.0  # écart de niveau toléré pour les prix et la vol (%)
+  cross_check_level_tol_bp: 25.0  # écart de niveau toléré pour les taux et spreads (pb)
 
 ui:
   default_watchlist: home

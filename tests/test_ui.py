@@ -197,3 +197,16 @@ def test_describe_condition():
     assert [describe_condition(r) for r in rules] == [
         "|z 1J| ≥ 2 (critique ≥ 3), baisse seulement", "niveau < 0, franchissement",
         "variation MTD |·| > 5", "cotation périmée"]
+
+
+def test_rows_to_check_are_marked():
+    table = _table()
+    table["suspect"] = [True, False]
+    table["roll_1d"] = [False, False]
+    shown = display_table(table)
+    assert shown.loc["SX5E", "Instrument"] == "Euro Stoxx 50 †"
+    assert shown.loc["BUND_10Y", "Instrument"] == "Bund 10Y"
+    html = style_table(shown, table).to_html()
+    assert theme.CHECK_BG.lower() in html.lower()
+    fig = heat_tiles(table, Horizon.D1, columns=4)
+    assert "†" in fig.data[0].text[0][0] and fig.data[0].z[0][0] == 0.0

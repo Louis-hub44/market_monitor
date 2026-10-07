@@ -21,6 +21,12 @@ CONFIG = ROOT / "config" / "config.yaml"
 AS_OF = "2026-10-05"
 
 
+@pytest.fixture(autouse=True)
+def _restore_from_settings(monkeypatch):
+    """ui_main_app.py replaces MarketMonitor.from_settings: restore it for the other tests."""
+    monkeypatch.setattr(MarketMonitor, "from_settings", MarketMonitor.__dict__["from_settings"])
+
+
 @pytest.fixture(scope="module")
 def monitor():
     ref = load_referential(ROOT / "config" / "instruments.yaml", ROOT / "config" / "watchlists.yaml")
@@ -29,7 +35,7 @@ def monitor():
 
 def test_full_universe_performance(monitor):
     report = monitor.performance("home", AS_OF)
-    assert len(report.table) == 73
+    assert len(report.table) == 76
     assert report.table["level"].notna().all() and not report.errors
     assert report.table.loc["OAT_BUND_10Y", "source"] == "derived"
     assert report.table["z_1d"].notna().sum() > 60
@@ -40,7 +46,7 @@ def test_full_daily_macro_with_alerts(monitor, tmp_path):
     rules = load_rules(ROOT / "config" / "alerts.yaml", monitor.referential)
     result = export_daily_macro(monitor, layout, tmp_path, AS_OF, rules)
     text = result.text.read_text(encoding="utf-8")
-    for title in ("Indices actions", "Taux 10 ans", "Marchés clés", "Alertes du jour"):
+    for title in ("Indices", "Taux 10 ans", "Marchés clés", "Spreads", "Alertes du jour"):
         assert title in text
     assert result.png.stat().st_size > 20_000 and result.excel.stat().st_size > 5_000
 
@@ -101,7 +107,7 @@ def test_cli_doctor_offline(tmp_path, capsys):
         f"cache:\n  directory: cache\n", encoding="utf-8")
     code = main(["--config", str(config), "doctor"])
     out = capsys.readouterr().out
-    assert "[OK] Référentiel : 73 instruments" in out
+    assert "[OK] Référentiel : 76 instruments" in out
     assert "[!!] Alertes" in out and "[!!] Provider fmp : FMP_API_KEY absente" in out
     assert code == 2  # alert rules file missing
 

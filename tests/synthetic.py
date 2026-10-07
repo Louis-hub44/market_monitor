@@ -40,3 +40,30 @@ def synthetic_monitor(referential: Referential, end: str | None = None, seed: in
     watchlists = [referential.watchlist(n) for n in referential.watchlist_names]
     fake_ref = Referential(instruments, watchlists)
     return MarketMonitor(MarketDataService([FakeProvider("bloomberg", data)]), fake_ref)
+
+
+World = tuple[MarketMonitor, dict[str, pd.Series], dict[str, pd.Series]]
+
+
+def synthetic_world(referential: Referential, end: str, seed: int = 7, noise: float = 0.0003) -> World:
+    """Two providers serving the same synthetic market: "bloomberg" (primary) and "fmp".
+
+    The second source differs by a small noise only, so the cross-check passes unless a
+    test corrupts one side. Returns the monitor and both data dicts (keyed by instrument id,
+    mutable before the first request).
+    """
+    base = synthetic_monitor(referential, end=end, seed=seed)
+    primary = base.service.providers[0].data  # type: ignore[attr-defined]
+    rng = np.random.default_rng(seed + 1)
+    secondary = {}
+    for instrument_id, series in primary.items():
+        quote = base.referential.get(instrument_id).quote.value
+        jitter = rng.normal(0, noise, len(series))
+        secondary[instrument_id] = series * (1 + jitter) if quote == "price" else series + jitter
+    instruments = [replace(base.referential.get(i),
+                           tickers={"bloomberg": TickerSpec(i), "fmp": TickerSpec(i)})
+                   if not base.referential.get(i).is_derived else base.referential.get(i)
+                   for i in base.referential.ids]
+    watchlists = [base.referential.watchlist(n) for n in base.referential.watchlist_names]
+    service = MarketDataService([FakeProvider("bloomberg", primary), FakeProvider("fmp", secondary)])
+    return MarketMonitor(service, Referential(instruments, watchlists)), primary, secondary

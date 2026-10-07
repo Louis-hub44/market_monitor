@@ -9,9 +9,13 @@
 #            vol    -> niveau en points de vol, variations en points (surchargeable : change: pct)
 #   ticker : soit une chaîne, soit {ticker, scale, proxy}
 #            scale : facteur appliqué pour ramener la source à l'unité du référentiel
-#            proxy : description si la source n'est PAS l'instrument exact (ETF, future...)
+#            proxy : description si la source n'est PAS l'instrument exact (ETF, future...) ;
+#                    pour une chaîne "a|b", {alternative: description} ne signale que celles-ci
 #   derived: combinaison linéaire d'autres instruments (spreads, pentes, papillons)
 #            niveau = multiplier x somme(weight_i x niveau_i), dates communes uniquement
+#   roll   : calendrier d'échéance d'un future générique front-month (brent | wti | ttf) :
+#            le 1J du jour de changement de contrat est signalé et exclu des mouvements,
+#            des alertes et de l'estimation de la volatilité
 #
 # Tickers marqués "à vérifier" : à contrôler sur le Terminal / la source avant production.
 
@@ -46,9 +50,15 @@ instruments:
             tickers: {bloomberg: NDX Index, fmp: ^NDX, free: ^NDX}}
   NKY:     {name: Nikkei 225, class: equity, group: Asie & émergents,
             tickers: {bloomberg: NKY Index, fmp: ^N225, free: ^N225}}
+  CSI300:  {name: CSI 300, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: SHSZ300 Index, free: 000300.SS}}
+  # MSCI EM : niveau officiel de l'indice (MSCI, ~1 700 en 2026), puis le future ICE MME=F
+  # (proxy, base de quelques points). L'ETF EEM (~50 USD) n'est plus utilisé : son prix
+  # n'est pas le niveau de l'indice publié dans la revue.
   MXEF:    {name: MSCI Emerging Markets, class: equity, group: Asie & émergents,
             tickers: {bloomberg: MXEF Index,
-                      free: {ticker: EEM, proxy: ETF iShares MSCI EM (USD)}}}
+                      free: {ticker: "msci:891800|MME=F",
+                             proxy: {"MME=F": future ICE MSCI EM (front-month)}}}}
 
   # Secteurs Stoxx 600 (fallback gratuit : ETF iShares sectoriels Xetra, à vérifier)
   SX7P:  {name: Banques, class: equity, group: Secteurs Stoxx 600,
@@ -129,14 +139,21 @@ instruments:
               tickers: {bloomberg: GSPG10YR Index, free: "cnbc:ES10Y-ES|stooq:10esy.b"}}
   BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne,
               tickers: {bloomberg: GSPG30YR Index, free: "cnbc:ES30Y-ES|stooq:30esy.b"}}
-  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,   # FRED (J-1), sinon future Micro 2Y
-              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2, free: "fred:DGS2|2YY=F"}}
+  # UST : CNBC en tête, comme les taux européens (une seule source et une seule date pour toute
+  # la courbe, pentes 2s10s / 5s30s cohérentes). Replis : FRED (publié avec un jour de
+  # retard), future Micro 2Y, indices CBOE de Yahoo.
+  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,
+              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2, free: "cnbc:US2Y|fred:DGS2|2YY=F"}}
   UST_5Y:    {name: UST 5 ans,  class: rates, group: États-Unis,
-              tickers: {bloomberg: USGG5YR Index, fmp: treasury:year5, free: ^FVX}}
+              tickers: {bloomberg: USGG5YR Index, fmp: treasury:year5, free: "cnbc:US5Y|^FVX"}}
   UST_10Y:   {name: UST 10 ans, class: rates, group: États-Unis,
-              tickers: {bloomberg: USGG10YR Index, fmp: treasury:year10, free: ^TNX}}
+              tickers: {bloomberg: USGG10YR Index, fmp: treasury:year10, free: "cnbc:US10Y|^TNX"}}
   UST_30Y:   {name: UST 30 ans, class: rates, group: États-Unis,
-              tickers: {bloomberg: USGG30YR Index, fmp: treasury:year30, free: ^TYX}}
+              tickers: {bloomberg: USGG30YR Index, fmp: treasury:year30, free: "cnbc:US30Y|^TYX"}}
+  GILT_10Y:  {name: Gilt 10 ans, class: rates, group: Royaume-Uni,
+              tickers: {bloomberg: GUKG10 Index, free: "cnbc:GB10Y-GB|stooq:10uky.b"}}
+  JGB_10Y:   {name: JGB 10 ans, class: rates, group: Japon,
+              tickers: {bloomberg: GJGB10 Index, free: "cnbc:JP10Y-JP|stooq:10jpy.b"}}
   ESTR:      {name: €STR, class: rates, group: Monétaire,
               tickers: {bloomberg: ESTRON Index, free: ecb:EST/B.EU000A2X2A25.WT}}
 
@@ -159,10 +176,12 @@ instruments:
   # ------------------------------------------------------------------- crédit
   # Pas de source gratuite quotidienne pour les indices iTraxx (données Markit sous licence) :
   # Bloomberg uniquement.
+  # Pas de source gratuite (données Markit sous licence) : hors Bloomberg, le spread
+  # de clôture est saisi à la main (vue Daily macro ou `market-monitor quote set`).
   ITRX_MAIN:  {name: iTraxx Europe Main 5Y, class: credit, group: iTraxx 5 ans,
-               tickers: {bloomberg: ITRXEBE CBIN Curncy}}
+               tickers: {bloomberg: ITRXEBE CBIN Curncy, manual: ITRX_MAIN}}
   ITRX_XOVER: {name: iTraxx Crossover 5Y, class: credit, group: iTraxx 5 ans,
-               tickers: {bloomberg: ITRXEXE CBIN Curncy}}
+               tickers: {bloomberg: ITRXEXE CBIN Curncy, manual: ITRX_XOVER}}
 
   # ---------------------------------------------------------------------- FX
   EURUSD: {name: EUR/USD, class: fx, group: Change,
@@ -178,11 +197,11 @@ instruments:
 
   # ------------------------------------------------------- matières premières
   # Génériques front-month : sauts possibles aux dates de roll.
-  BRENT:  {name: Brent, class: commodities, group: Énergie, unit: USD/bbl,
+  BRENT:  {name: Brent, class: commodities, group: Énergie, unit: USD/bbl, roll: brent,
            tickers: {bloomberg: CO1 Comdty, fmp: BZUSD, free: BZ=F}}
-  WTI:    {name: WTI, class: commodities, group: Énergie, unit: USD/bbl,
+  WTI:    {name: WTI, class: commodities, group: Énergie, unit: USD/bbl, roll: wti,
            tickers: {bloomberg: CL1 Comdty, fmp: CLUSD, free: CL=F}}
-  TTF:    {name: Gaz TTF (front month), class: commodities, group: Énergie, unit: EUR/MWh,
+  TTF:    {name: Gaz TTF (front month), class: commodities, group: Énergie, unit: EUR/MWh, roll: ttf,
            tickers: {bloomberg: TTFG1MON OECM Index, free: TTF=F}}   # à vérifier
   GOLD:   {name: Or, class: commodities, group: Métaux, unit: USD/oz,
            tickers: {bloomberg: XAU Curncy,

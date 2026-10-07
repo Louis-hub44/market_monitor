@@ -10,6 +10,11 @@ date :math:`d_f`), a request :math:`[s, e]` (with :math:`e` clipped to today) tr
   :math:`L` re-pulls the last days to catch revisions and late prints.
 
 Segments are always contiguous with the coverage, so coverage stays one interval.
+
+A series is never made of two sources. Each entry records its ``origin`` (the
+alternative of a ``a|b`` fallback chain that served it); when a refresh is answered by
+another alternative, the whole window is reloaded from it instead of being spliced, and
+history extended to the left is asked from the cached origin itself.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -31,6 +37,8 @@ from market_monitor.data.models import (
     HistoryResult,
     SnapshotResult,
     empty_frame,
+    fallback_origin,
+    is_chain,
 )
 from market_monitor.data.quality import assemble_frame, empty_series, slice_dates
 from market_monitor.exceptions import DataProviderError, ProviderUnavailableError
@@ -124,9 +132,13 @@ class CachedProvider(DataProvider):
         """Download every planned segment, update entries/cache, return failures."""
         failures: dict[str, str] = {}
         for segments, tickers in plan.items():
-            for seg_start, seg_end in segments:
+            for segment in segments:
+                # history extended to the left is asked from the cached origin itself, so an
+                # alternative with a shorter history cannot take over the whole series
+                fetch_as = {t: self._fetch_ticker(t, entries[t], segment) for t in tickers}
                 try:
-                    fetched = self._inner.get_history(tickers, seg_start, seg_end, field)
+                    fetched = self._inner.get_history(
+                        list(dict.fromkeys(fetch_as.values())), segment[0], segment[1], field)
                 except DataProviderError as exc:
                     for ticker in tickers:
                         failures[ticker] = f"fetch failed: {exc}"
@@ -137,23 +149,29 @@ class CachedProvider(DataProvider):
                         return failures
                     continue
                 for ticker in tickers:
-                    self._absorb(ticker, fetched, (seg_start, seg_end), entries, field, now, failures)
+                    piece = _Piece.of(fetched, fetch_as[ticker])
+                    self._absorb(ticker, piece, segment, entries, field, now, failures)
         return failures
+
+    @staticmethod
+    def _fetch_ticker(ticker: str, entry: CacheEntry | None, segment: Segment) -> str:
+        origin = _origin(entry, ticker)
+        left_only = entry is not None and segment[1] < entry.covered_start
+        return origin if left_only and origin is not None else ticker
 
     def _absorb(
         self,
         ticker: str,
-        fetched: HistoryResult,
+        piece: _Piece,
         segment: Segment,
         entries: dict[str, CacheEntry | None],
         field: Field,
         now: datetime,
         failures: dict[str, str],
     ) -> None:
-        """Merge one ticker's fetched segment into its cache entry."""
+        """Merge one ticker's fetched segment into its cache entry (never across origins)."""
         entry = entries[ticker]
-        new = fetched.data[ticker].dropna()
-        error = fetched.errors.get(ticker)
+        new, error, origin = piece.series, piece.error, piece.origin
         # An empty answer is trusted (holidays, pre-inception) only for a ticker the
         # provider already knows; otherwise it may be a typo or a transient failure.
         if new.empty and (entry is None or error not in (None, NO_DATA)):
@@ -164,9 +182,14 @@ class CachedProvider(DataProvider):
         seg_start, seg_end = segment
         old = entry.series if entry is not None else empty_series()
         kept = old[(old.index < pd.Timestamp(seg_start)) | (old.index > pd.Timestamp(seg_end))]
+        if entry is not None:
+            origin = origin if not new.empty else _origin(entry, ticker)
+            if not kept.empty and origin != _origin(entry, ticker):
+                self._switch_origin(ticker, origin, segment, entry, entries, field, now, failures)
+                return
         merged = pd.concat([kept, new]).sort_index()
         if entry is None:
-            updated = CacheEntry(merged, seg_start, seg_end, now)
+            updated = CacheEntry(merged, seg_start, seg_end, now, origin)
         else:
             updated = CacheEntry(
                 series=merged,
@@ -174,7 +197,39 @@ class CachedProvider(DataProvider):
                 covered_end=max(seg_end, entry.covered_end),
                 # only a right-edge refresh makes the provisional tail fresh again
                 fetched_at=now if seg_end >= entry.covered_end else entry.fetched_at,
+                origin=origin,
             )
+        entries[ticker] = updated
+        self._cache.save(self.name, field, ticker, updated)
+
+    def _switch_origin(
+        self,
+        ticker: str,
+        origin: str | None,
+        segment: Segment,
+        entry: CacheEntry,
+        entries: dict[str, CacheEntry | None],
+        field: Field,
+        now: datetime,
+        failures: dict[str, str],
+    ) -> None:
+        """Another alternative answered: reload the whole window from it instead of splicing.
+
+        Two sources of the "same" instrument differ in level (e.g. CNBC generic vs
+        Bundesbank zero-coupon Bund): a spliced series would show a fake move at the seam.
+        """
+        start, end = min(segment[0], entry.covered_start), max(segment[1], entry.covered_end)
+        source = origin or ticker
+        try:
+            full = _Piece.of(self._inner.get_history([source], start, end, field), source)
+        except DataProviderError as exc:
+            full = _Piece(empty_series(), str(exc), None)
+        if full.series.empty:
+            failures[ticker] = (f"{source} answered but its full history is unavailable "
+                                f"({full.error or NO_DATA}); cached series kept")
+            return
+        logger.info("%s: source switched to %s, history reloaded %s -> %s", ticker, source, start, end)
+        updated = CacheEntry(full.series, start, end, now, source)
         entries[ticker] = updated
         self._cache.save(self.name, field, ticker, updated)
 
@@ -191,14 +246,49 @@ class CachedProvider(DataProvider):
         }
         errors: dict[str, str] = {}
         warnings: dict[str, str] = {}
+        origins: dict[str, str] = {}
+        for ticker, entry in entries.items():
+            origin = _origin(entry, ticker)
+            if entry is None or origin is None:
+                continue
+            origins[ticker] = origin
+            if fallback_origin(ticker, origin):
+                warnings[ticker] = f"served by fallback {origin}"
         for ticker, message in failures.items():
             if series[ticker].empty:
                 errors[ticker] = message
             else:
-                warnings[ticker] = f"{message} - serving cached data"
+                previous = warnings.get(ticker)
+                current = f"{message} - serving cached data"
+                warnings[ticker] = f"{previous}; {current}" if previous else current
         return HistoryResult(
-            data=assemble_frame(series, request.tickers), errors=errors, warnings=warnings
+            data=assemble_frame(series, request.tickers), errors=errors, warnings=warnings,
+            origins=origins,
         )
+
+
+@dataclass(frozen=True)
+class _Piece:
+    """One ticker's slice of a fetched result."""
+
+    series: pd.Series
+    error: str | None
+    origin: str | None
+
+    @classmethod
+    def of(cls, result: HistoryResult, ticker: str) -> _Piece:
+        series = result.data[ticker].dropna() if ticker in result.data else empty_series()
+        origin = result.origins.get(ticker) if not series.empty else None
+        return cls(series, result.errors.get(ticker), origin or (ticker if not series.empty else None))
+
+
+def _origin(entry: CacheEntry | None, ticker: str) -> str | None:
+    """Origin of a cached series; unknown (``None``) for a chain cached before v1.3."""
+    if entry is None:
+        return None
+    if entry.origin:
+        return entry.origin
+    return None if is_chain(ticker) else ticker
 
 
 def _merge_segments(segments: list[Segment]) -> list[Segment]:

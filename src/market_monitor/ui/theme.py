@@ -17,6 +17,7 @@ ACCENT = "#F0A830"
 UP = "#3FA796"
 DOWN = "#E06C5A"
 NEUTRAL_TILE = "#22303D"
+CHECK_BG = "#5C4A1F"  # dark amber: value to check before use
 INFO = "#6CB4E8"
 SEVERITY_COLORS = {"critical": DOWN, "warning": ACCENT, "info": INFO}
 #: categorical palette for comparison lines (teal / coral are reserved for up / down)

@@ -82,15 +82,18 @@ def finalize_history(raw: HistoryResult, request: HistoryRequest, provider: str)
     errors: dict[str, str] = {}
     warnings: dict[str, str] = {}
     sources: dict[str, str] = {}
+    origins: dict[str, str] = {}
     for ticker in request.tickers:
         if data[ticker].isna().all():
             errors[ticker] = raw.errors.get(ticker, NO_DATA)
             continue
         sources[ticker] = raw.sources.get(ticker, provider)
+        origins[ticker] = raw.origins.get(ticker, ticker)
         message = raw.warnings.get(ticker) or raw.errors.get(ticker)
         if message:
             warnings[ticker] = message
-    return HistoryResult(data=data, errors=errors, warnings=warnings, sources=sources)
+    return HistoryResult(data=data, errors=errors, warnings=warnings, sources=sources,
+                         origins=origins)
 
 
 def finalize_snapshot(raw: SnapshotResult, tickers: tuple[str, ...], provider: str) -> SnapshotResult:

@@ -14,7 +14,12 @@ Conventions (see README §9 for the full derivation):
   :math:`k = 100` for yields in % and :math:`1` for spreads in bp, ``abs`` :math:`L_0 - L_h`;
 * z-score over :math:`n` daily steps, with :math:`\mu, \sigma` estimated on the
   ``window`` daily changes **up to the reference date** (out of sample):
-  :math:`z = (x - n\mu) / (\sigma \sqrt{n})`.
+  :math:`z = (x - n\mu) / (\sigma \sqrt{n})`;
+* contract rolls of generic futures (``roll`` in the referential): changes dated on a roll
+  window are excluded from :math:`\mu, \sigma`, and ``roll_1d`` / ``roll_1w`` flag the
+  horizons that span one;
+* ``suspect``: a 1D move of :math:`|z| \ge` ``suspect_abs_z`` that no roll explains - far
+  more often a bad print than a market move; it must be checked before publication.
 """
 
 from __future__ import annotations
@@ -31,6 +36,8 @@ import pandas as pd
 from market_monitor.config import AnalyticsSettings
 from market_monitor.data.quality import empty_series
 from market_monitor.referential import ChangeUnit, Instrument
+from market_monitor.rolls import roll_days, rolled_between
+from market_monitor.text_format import fr_number
 
 BDAYS_PER_WEEK = 5
 
@@ -52,7 +59,12 @@ VALUE_COLUMNS = (
     + ["stale"]
     + [f"ref_{h}" for h in Horizon]          # reference levels, for audit / Excel formulas
     + [f"ref_date_{h}" for h in Horizon]
+    + [f"roll_{h}" for h in ZSCORE_HORIZONS]  # horizon spans a contract roll
+    + ["suspect", "suspect_reason", "cross_check"]
 )
+#: ``cross_check`` values
+CHECK_NOT_DONE, CHECK_OK, CHECK_GAP, CHECK_UNAVAILABLE = "", "ok", "écart", "indisponible"
+DEFAULT_SUSPECT_ABS_Z = 8.0
 
 
 # ---------------------------------------------------------------- primitives
@@ -114,8 +126,12 @@ def required_start(as_of: date, settings: AnalyticsSettings) -> date:
 class PerformanceEngine:
     """Pure computation on harmonised levels (no I/O, no UI)."""
 
-    def __init__(self, settings: AnalyticsSettings | None = None) -> None:
+    def __init__(self, settings: AnalyticsSettings | None = None,
+                 suspect_abs_z: float = DEFAULT_SUSPECT_ABS_Z) -> None:
+        if suspect_abs_z <= 0:
+            raise ValueError("suspect_abs_z must be > 0")
         self._settings = settings or AnalyticsSettings()
+        self._suspect_abs_z = suspect_abs_z
 
     @property
     def settings(self) -> AnalyticsSettings:
@@ -135,11 +151,15 @@ class PerformanceEngine:
         s = series.dropna()
         s = s[s.index <= pd.Timestamp(as_of)]
         values: dict[str, Any] = {c: math.nan for c in VALUE_COLUMNS}
-        values.update(level_date=pd.NaT, stale=True, **{f"ref_date_{h}": pd.NaT for h in Horizon})
+        values.update(level_date=pd.NaT, stale=True, **{f"ref_date_{h}": pd.NaT for h in Horizon},
+                      **{f"roll_{h}": False for h in ZSCORE_HORIZONS},
+                      suspect=False, suspect_reason="", cross_check=CHECK_NOT_DONE)
         if s.empty:
             return values
         t0, level = s.index[-1], float(s.iloc[-1])
         daily = daily_changes(s, inst.change, inst.bp_factor)
+        if inst.roll is not None:  # a roll jump is a calendar spread, not volatility
+            daily = daily[~daily.index.isin(roll_days(inst.roll, s.index[0], t0))]
         values.update(level=level, level_date=t0, stale=self._is_stale(t0.date(), as_of))
         for horizon in Horizon:
             ref = self._reference(horizon, s, as_of)
@@ -152,6 +172,11 @@ class PerformanceEngine:
             if horizon in ZSCORE_HORIZONS:
                 n_steps = int((s.index > ref_date).sum())
                 values[f"z_{horizon}"] = zscore(x, n_steps, daily[daily.index <= ref_date], self._settings)
+                values[f"roll_{horizon}"] = rolled_between(inst.roll, ref_date, t0)
+        z_1d = values["z_1d"]
+        if not values["roll_1d"] and not math.isnan(z_1d) and abs(z_1d) >= self._suspect_abs_z:
+            values.update(suspect=True,
+                          suspect_reason=f"variation de séance de {fr_number(abs(z_1d), 1)} écarts-types")
         return values
 
     def _reference(self, horizon: Horizon, s: pd.Series, as_of: date) -> tuple[pd.Timestamp, float] | None:
@@ -188,15 +213,27 @@ def _typed(table: pd.DataFrame) -> pd.DataFrame:
     table[numeric] = table[numeric].astype("float64")
     for column in ["level_date"] + [c for c in VALUE_COLUMNS if c.startswith("ref_date_")]:
         table[column] = pd.to_datetime(table[column])
-    table["stale"] = table["stale"].astype(bool)
+    for column in ["stale", "suspect"] + [f"roll_{h}" for h in ZSCORE_HORIZONS]:
+        table[column] = table[column].astype(bool)
+    for column in ("suspect_reason", "cross_check"):
+        table[column] = table[column].astype("object")
     return table
 
 
 def rank_movers(table: pd.DataFrame, horizon: Horizon = Horizon.D1, n: int = 6) -> pd.DataFrame:
-    """Largest moves by absolute z-score (rows without a z-score are excluded)."""
+    """Largest moves by absolute z-score.
+
+    Excluded: rows without a z-score, stale rows, suspect rows and rows whose horizon
+    spans a contract roll.
+    """
     if horizon not in ZSCORE_HORIZONS:
         raise ValueError(f"no z-score for horizon {horizon}")
     column = f"z_{horizon}"
     valid = table[table[column].notna() & ~table["stale"]]
+    # a bad print or a contract roll is not a market move
+    if "suspect" in valid.columns:
+        valid = valid[~valid["suspect"].astype(bool)]
+    if f"roll_{horizon}" in valid.columns:
+        valid = valid[~valid[f"roll_{horizon}"].astype(bool)]
     order = valid[column].abs().sort_values(ascending=False).index
     return valid.loc[order[:n]]

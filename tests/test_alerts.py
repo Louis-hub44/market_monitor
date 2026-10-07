@@ -189,3 +189,30 @@ def test_cli_alerts_exit_code_and_json(tmp_path, monkeypatch, capsys):
     assert main([*args, "--fail-on", "critical"]) == 3
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload[0]["severity"] == "critical" and "[Critique]" in capsys.readouterr().out
+
+
+# ------------------------------------------------- suspect prints and rolls
+def test_suspect_rule_and_market_rules_silenced():
+    rules = _rules(
+        {"id": "s", "type": "suspect", "instruments": ["SX5E"]},
+        {"id": "z", "type": "zscore", "instruments": ["SX5E"], "min_abs_z": 2},
+        {"id": "l", "type": "level", "instrument": "SX5E", "above": 50},
+        {"id": "c", "type": "change", "instrument": "SX5E", "abs_above": 1},
+    )
+    table = _table(SX5E=_row("Euro Stoxx 50", chg_1d=12.0, z_1d=15.0, suspect=True,
+                             suspect_reason="écart avec FMP"))
+    report = evaluate(rules, table, AS_OF)
+    assert [a.rule_id for a in report.alerts] == ["s"]
+    assert report.alerts[0].message == "Euro Stoxx 50 : donnée suspecte, à vérifier (écart avec FMP)"
+    assert RuleKind.SUSPECT.value == "suspect"
+
+
+def test_roll_silences_moves_but_not_levels():
+    rules = _rules(
+        {"id": "z", "type": "zscore", "instruments": ["SX5E"], "min_abs_z": 2},
+        {"id": "c", "type": "change", "instrument": "SX5E", "abs_above": 1},
+        {"id": "w", "type": "change", "instrument": "SX5E", "horizon": "1w", "abs_above": 1},
+        {"id": "l", "type": "level", "instrument": "SX5E", "above": 50},
+    )
+    table = _table(SX5E=_row("Brent", chg_1d=6.0, z_1d=3.0, chg_1w=2.0, roll_1d=True, roll_1w=False))
+    assert [a.rule_id for a in evaluate(rules, table, AS_OF).alerts] == ["w", "l"]

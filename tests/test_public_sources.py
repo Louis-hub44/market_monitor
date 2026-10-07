@@ -112,7 +112,7 @@ def test_default_sources_share_the_corporate_session(tmp_path):
     sessions = {id(client._session) for client in provider._sources.values()}
     assert len(sessions) == 1
     assert next(iter(provider._sources.values()))._session.verify is False
-    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "stoxx:", "cnbc:"}
+    assert set(default_sources()) == {"stooq:", "bbk:", "fred:", "stoxx:", "cnbc:", "msci:"}
 
 
 def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
@@ -121,7 +121,10 @@ def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
         for tenor in ("2Y", "5Y", "10Y", "30Y"):
             chain = ref.get(f"{country}_{tenor}").tickers["free"].ticker.split("|")
             assert chain[0].startswith("cnbc:") and chain[1].startswith("stooq:")
-    assert ref.get("UST_2Y").tickers["free"].ticker == "fred:DGS2|2YY=F"
+    # the whole US curve comes from CNBC first (one source, one date), then the former sources
+    assert ref.get("UST_2Y").tickers["free"].ticker == "cnbc:US2Y|fred:DGS2|2YY=F"
+    for tenor, fallback in (("5Y", "^FVX"), ("10Y", "^TNX"), ("30Y", "^TYX")):
+        assert ref.get(f"UST_{tenor}").tickers["free"].ticker == f"cnbc:US{tenor}|{fallback}"
     assert "|bbk:BBSIS/" in ref.get("BUND_10Y").tickers["free"].ticker
     assert ref.get("V2X").tickers["free"].ticker == "stoxx:v2tx"
     assert ref.get("SX86P").tickers["free"].proxy
@@ -235,3 +238,51 @@ def test_cnbc_bars():
         parse_cnbc_bars({"error": "x"})
     with pytest.raises(DataProviderError, match="no JSON"):
         CnbcClient(session=FakeSession([FakeResponse(200)])).fetch("X", START, END)
+
+
+# ------------------------------------------------------------------- MSCI
+MSCI_PAYLOAD = {"msci_index_code": "891800", "indexes": {"INDEX_LEVELS": [
+    {"level_eod": 1735.1, "calc_date": 20260930},
+    {"level_eod": 1739.4, "calc_date": 20261001},
+    {"level_eod": 1742.92, "calc_date": 20261002},
+]}}
+
+
+def test_msci_client_parses_levels_and_params():
+    from market_monitor.data.providers.public import MsciClient
+
+    session = FakeSession([FakeResponse(200, payload=MSCI_PAYLOAD)])
+    series = MsciClient(session=session).fetch("891800", START, END)
+    assert series.tolist() == [1739.4, 1742.92]
+    params = session.calls[0]["params"]
+    assert params["index_codes"] == "891800" and params["index_variant"] == "STRD"
+    assert params["currency_symbol"] == "USD" and params["start_date"] == "20261001"
+
+
+def test_msci_key_variants_and_errors():
+    from market_monitor.data.providers.public import parse_msci_key, parse_msci_levels
+
+    assert parse_msci_key("891800") == ("891800", "STRD", "USD")
+    assert parse_msci_key("990100/netr/eur") == ("990100", "NETR", "EUR")
+    with pytest.raises(DataProviderError, match="invalid MSCI index code"):
+        parse_msci_key("EM")
+    with pytest.raises(DataProviderError, match="Index not found"):
+        parse_msci_levels({"error_message": "Index not found"}, "1")
+    with pytest.raises(DataProviderError, match="unexpected MSCI payload"):
+        parse_msci_levels({"foo": 1}, "1")
+
+
+def test_msci_http_errors():
+    from market_monitor.data.providers.public import MsciClient
+
+    assert MsciClient(session=FakeSession([FakeResponse(404)])).fetch("891800", START, END).empty
+    with pytest.raises(DataProviderError, match="no JSON"):
+        MsciClient(session=FakeSession([FakeResponse(200, text="<html>")])).fetch("891800", START, END)
+
+
+def test_repository_msci_em_is_official_then_future_proxy():
+    ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
+    spec = ref.get("MXEF").tickers["free"]
+    assert spec.ticker.startswith("msci:891800|")
+    assert spec.proxy_for("msci:891800") is None
+    assert "MSCI EM" in (spec.proxy_for("MME=F") or "")

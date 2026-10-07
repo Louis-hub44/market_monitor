@@ -8,10 +8,11 @@ watchlists:
     instruments: ["*"]
 
   daily_macro:
-    description: Bandeaux de la revue macro (indices, taux 10 ans, marchés clés)
-    instruments: [SX5E, CAC, DAX, FTSEMIB, SPX, NDX, NKY,
-                  BUND_10Y, OAT_10Y, BTP_10Y, UST_10Y, OAT_BUND_10Y, BTP_BUND_10Y,
-                  BRENT, EURUSD, VIX, MXEF, GOLD, BTC]
+    description: Bandeaux de la revue macro (indices, taux 10 ans, marchés clés, spreads)
+    instruments: [SX5E, CAC, SPX, NDX, NKY, CSI300,
+                  UST_10Y, BUND_10Y, OAT_10Y, BTP_10Y, GILT_10Y, JGB_10Y,
+                  BRENT, EURUSD, VIX, MXEF, GOLD, BTC,
+                  OAT_BUND_10Y, ITRX_MAIN, ITRX_XOVER]
 
   sectors:
     description: Secteurs Stoxx 600

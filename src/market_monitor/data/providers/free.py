@@ -27,12 +27,20 @@ import pandas as pd
 import requests
 
 from market_monitor.data.base import DataProvider
-from market_monitor.data.models import NO_DATA, Field, HistoryRequest, HistoryResult
+from market_monitor.data.models import (
+    CHAIN_SEP,
+    NO_DATA,
+    Field,
+    HistoryRequest,
+    HistoryResult,
+    chain_alternatives,
+)
 from market_monitor.data.providers._http import get_with_retry
 from market_monitor.data.providers.public import (
     BundesbankClient,
     CnbcClient,
     FredClient,
+    MsciClient,
     StooqClient,
     StoxxClient,
 )
@@ -44,7 +52,6 @@ logger = logging.getLogger(__name__)
 
 ECB_PREFIX = "ecb:"
 YAHOO_PREFIX = "yf:"
-CHAIN_SEP = "|"
 DEFAULT_ECB_URL = "https://data-api.ecb.europa.eu/service/data"
 _YF_FIELDS = {
     Field.LAST: "Close", Field.OPEN: "Open", Field.HIGH: "High",
@@ -233,10 +240,11 @@ class FreeProvider(DataProvider):
         series: dict[str, pd.Series] = {}
         errors: dict[str, str] = {}
         warnings: dict[str, str] = {}
+        origins: dict[str, str] = {}
         yahoo: dict[str, str] = {}
         for ticker in request.tickers:
             if CHAIN_SEP in ticker:
-                self._fetch_chain(ticker, request, series, errors, warnings)
+                self._fetch_chain(ticker, request, series, errors, warnings, origins)
             elif self._prefix(ticker) is None:
                 yahoo[ticker] = ticker.removeprefix(YAHOO_PREFIX)
             else:
@@ -247,7 +255,7 @@ class FreeProvider(DataProvider):
         if yahoo:
             self._fetch_yahoo(yahoo, request, series, errors)
         return HistoryResult(data=assemble_frame(series, request.tickers), errors=errors,
-                             warnings=warnings)
+                             warnings=warnings, origins=origins)
 
     def _prefix(self, ticker: str) -> str | None:
         return next((p for p in self._sources if ticker.startswith(p)), None)
@@ -276,9 +284,14 @@ class FreeProvider(DataProvider):
         series: dict[str, pd.Series],
         errors: dict[str, str],
         warnings: dict[str, str],
+        origins: dict[str, str],
     ) -> None:
-        """``a|b|c``: first alternative with data wins; a fallback is reported as a warning."""
-        alternatives = [a.strip() for a in ticker.split(CHAIN_SEP) if a.strip()]
+        """``a|b|c``: first alternative with data wins; a fallback is reported as a warning.
+
+        The winning alternative is returned in ``origins`` so the cache never splices two
+        alternatives into one series.
+        """
+        alternatives = chain_alternatives(ticker)
         trail: list[str] = []
         for rank, alt in enumerate(alternatives):
             try:
@@ -295,6 +308,7 @@ class FreeProvider(DataProvider):
                 trail.append(f"{alt}: {NO_DATA}")
                 continue
             series[ticker] = data
+            origins[ticker] = alt
             if rank:
                 warnings[ticker] = f"served by fallback {alt} ({'; '.join(trail)})"
             return
@@ -329,4 +343,5 @@ def default_sources(
         "fred:": FredClient(**kwargs),
         "stoxx:": StoxxClient(**kwargs),
         "cnbc:": CnbcClient(**kwargs),
+        "msci:": MsciClient(**kwargs),
     }

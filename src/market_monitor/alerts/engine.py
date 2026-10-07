@@ -78,8 +78,10 @@ def evaluate(rules: Sequence[AlertRule], table: pd.DataFrame, as_of: date) -> Al
 
 
 def _check(rule: AlertRule, instrument_id: str, row: pd.Series) -> Alert | None:
-    checker = {RuleKind.ZSCORE: _zscore, RuleKind.LEVEL: _level,
-               RuleKind.CHANGE: _change, RuleKind.STALE: _stale}[rule.kind]
+    checker = {RuleKind.ZSCORE: _zscore, RuleKind.LEVEL: _level, RuleKind.CHANGE: _change,
+               RuleKind.STALE: _stale, RuleKind.SUSPECT: _suspect}[rule.kind]
+    if rule.kind in MARKET_RULES and _unreliable(row, rule):
+        return None  # a bad print (or a contract roll, for a change) must not raise a market alert
     found = checker(rule, row)
     if found is None:
         return None
@@ -150,6 +152,24 @@ def _stale(rule: AlertRule, row: pd.Series) -> Found:
     if not row["stale"]:
         return None
     return rule.severity, math.nan, f"dernière cotation le {short_date(row['level_date'])}"
+
+
+def _suspect(rule: AlertRule, row: pd.Series) -> Found:
+    if not bool(row.get("suspect", False)):
+        return None
+    reason = row.get("suspect_reason") or "à vérifier"
+    return rule.severity, float(row.get("z_1d", math.nan)), f"donnée suspecte, à vérifier ({reason})"
+
+
+#: rules about the market, silenced on suspect prints
+MARKET_RULES = (RuleKind.ZSCORE, RuleKind.LEVEL, RuleKind.CHANGE)
+
+
+def _unreliable(row: pd.Series, rule: AlertRule) -> bool:
+    """Suspect print; or, for a move, a horizon spanning a contract roll (a level stays valid)."""
+    if bool(row.get("suspect", False)):
+        return True
+    return rule.kind is not RuleKind.LEVEL and bool(row.get(f"roll_{rule.horizon.value}", False))
 
 
 def _direction_ok(direction: Direction, z: float) -> bool:

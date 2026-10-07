@@ -19,7 +19,8 @@ from market_monitor.ui import theme
 from market_monitor.ui.caching import cached, refresh_nonce
 
 STRIP_SIZE = 5
-KIND_LABELS = {"zscore": "z-score", "level": "Niveau", "change": "Variation", "stale": "Donnée périmée"}
+KIND_LABELS = {"zscore": "z-score", "level": "Niveau", "change": "Variation", "stale": "Donnée périmée",
+               "suspect": "Donnée suspecte"}
 
 
 def _compute(_monitor: MarketMonitor, _rules: Sequence[AlertRule], monitor_id: int, rules_hash: int,
@@ -98,6 +99,8 @@ def describe_condition(rule: AlertRule) -> str:
         if rule.direction.value == "both":
             return text
         return f"{text}, {'hausse' if rule.direction.value == 'up' else 'baisse'} seulement"
+    if rule.kind.value == "suspect":
+        return "mouvement suspect ou écart entre sources"
     if rule.kind.value == "stale":
         return "cotation périmée"
     symbol = {"above": ">", "below": "<", "abs_above": "|·| >"}[rule.condition or "above"]

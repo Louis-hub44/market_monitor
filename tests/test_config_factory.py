@@ -14,7 +14,7 @@ REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 def test_repo_config_loads(monkeypatch, tmp_path):
     monkeypatch.delenv("MARKET_MONITOR_PROVIDERS", raising=False)
     settings = load_settings(REPO_CONFIG, env_file=tmp_path / "absent.env")
-    assert settings.priority == ("bloomberg", "fmp", "free")
+    assert settings.priority == ("bloomberg", "fmp", "free", "manual")
     assert settings.cache.directory.is_absolute()
     assert settings.cache.directory.name == "market_data"
 
@@ -22,7 +22,7 @@ def test_repo_config_loads(monkeypatch, tmp_path):
 def test_env_overrides_and_secret_hidden(tmp_path):
     env = {"FMP_API_KEY": " k3y ", "MARKET_MONITOR_PROVIDERS": "FMP, free"}
     settings = settings_from_dict({}, base_dir=tmp_path, env=env)
-    assert settings.priority == ("fmp", "free")
+    assert settings.priority == ("fmp", "free", "manual")
     assert settings.fmp.api_key == "k3y"
     assert "k3y" not in repr(settings)
 
@@ -44,7 +44,7 @@ def test_invalid_configs(raw, tmp_path):
 def test_build_service_skips_unavailable(tmp_path):
     raw = {"providers": {"priority": ["fmp", "free"]}, "cache": {"directory": "c"}}
     service = build_service(settings_from_dict(raw, base_dir=tmp_path, env={}))
-    assert service.provider_names == ("free",)  # no FMP key
+    assert service.provider_names == ("free", "manual")  # no FMP key
     assert isinstance(service.providers[0], CachedProvider)
 
 

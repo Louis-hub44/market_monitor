@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from market_monitor.alerts import load_rules
-from market_monitor.config import Settings
+from market_monitor.config import MANUAL_PROVIDER, Settings
 from market_monitor.data.factory import build_provider, rest_session
+from market_monitor.data.providers.manual import ManualQuotes
 from market_monitor.exceptions import MarketMonitorError
 from market_monitor.export import load_layout
 from market_monitor.network import SSL_HINT, check_connectivity, describe, looks_like_ssl_error, proxy_env
@@ -99,6 +100,8 @@ def _provider(settings: Settings, name: str, online: bool) -> Check:
     provider = build_provider(name, settings)
     if not provider.is_available():
         return Check(label, False, UNAVAILABLE_HINTS.get(name, "indisponible"))
+    if name == MANUAL_PROVIDER:
+        return Check(label, True, _manual_detail(settings))
     if name == "free" and importlib.util.find_spec("yfinance") is None:
         return Check(label, False, "yfinance non installé (ECB seul disponible)")
     if not online:
@@ -112,6 +115,15 @@ def _provider(settings: Settings, name: str, online: bool) -> Check:
         return Check(label, False, _with_ssl_hint(f"{PROBES[name]} : {next(iter(result.errors.values()))}"))
     last = result.data[PROBES[name]].dropna()
     return Check(label, True, f"{PROBES[name]} = {last.iloc[-1]:g} au {last.index[-1]:%d/%m}")
+
+
+def _manual_detail(settings: Settings) -> str:
+    store = ManualQuotes(settings.manual.file)
+    frame = store.frame()
+    if frame.empty:
+        return f"aucune saisie ({store.path})"
+    last = frame.groupby("ticker")["date"].max()
+    return ", ".join(f"{t} au {d:%d/%m}" for t, d in last.items()) + f" ({store.path})"
 
 
 def _with_ssl_hint(detail: str) -> str:

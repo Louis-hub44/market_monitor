@@ -10,6 +10,8 @@
     market-monitor check-referential
     market-monitor cache-clear [--provider fmp]
     market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"   # cherche des séries BCE
+    market-monitor quote set ITRX_XOVER 287.5 [--date 2026-10-06]   # saisie manuelle
+    market-monitor quote list [ITRX_MAIN] | quote import histo.csv | quote delete ID DATE
 
 Exit codes: 0 OK, 1 data missing, 2 configuration / usage error, 3 alert threshold hit.
 """
@@ -29,6 +31,7 @@ import pandas as pd
 from market_monitor.alerts import AlertRule, Severity, load_rules
 from market_monitor.config import (
     KNOWN_PROVIDERS,
+    MANUAL_PROVIDER,
     PROJECT_ROOT,
     Settings,
     configure_logging,
@@ -36,9 +39,11 @@ from market_monitor.config import (
 )
 from market_monitor.data.cache import ParquetCache
 from market_monitor.data.factory import build_provider, rest_session, with_cache
+from market_monitor.data.models import to_date
 from market_monitor.data.providers.free import ECBClient
+from market_monitor.data.providers.manual import previous_business_day
 from market_monitor.doctor import run_checks
-from market_monitor.exceptions import MarketMonitorError
+from market_monitor.exceptions import InvalidRequestError, MarketMonitorError
 from market_monitor.export import export_daily_macro, load_layout
 from market_monitor.export.text import alert_lines
 from market_monitor.monitor import MarketMonitor, PerformanceReport
@@ -81,7 +86,25 @@ def _parser() -> argparse.ArgumentParser:
     ecb.add_argument("pattern", help="key with wildcards, e.g. D.DE+FR+IT+ES....YLD")
     clear = sub.add_parser("cache-clear", help="delete the local parquet cache")
     clear.add_argument("--provider", choices=KNOWN_PROVIDERS)
+    _quote_parser(sub)
     return parser
+
+
+def _quote_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    quote = sub.add_parser("quote", help="manual quotes (iTraxx without Bloomberg...)")
+    actions = quote.add_subparsers(dest="action", required=True)
+    put = actions.add_parser("set", help="enter one closing level")
+    put.add_argument("instrument", help="instrument id, e.g. ITRX_XOVER")
+    put.add_argument("value", help="level in the instrument unit (bp for iTraxx); 287,5 accepted")
+    put.add_argument("--date", default=None, help="close date (default: previous business day)")
+    listing = actions.add_parser("list", help="show the last entries")
+    listing.add_argument("instrument", nargs="?", default=None)
+    listing.add_argument("--last", type=int, default=10)
+    imp = actions.add_parser("import", help="merge a CSV history (date,ticker,value or date,<id>...)")
+    imp.add_argument("file")
+    rm = actions.add_parser("delete", help="delete one entry")
+    rm.add_argument("instrument")
+    rm.add_argument("date")
 
 
 # =================================================================== commands
@@ -89,7 +112,9 @@ def _doctor(settings: Settings, args: argparse.Namespace) -> int:
     checks = run_checks(settings, online=args.online)
     for check in checks:
         print(f"[{'OK' if check.ok else '!!'}] {check.name} : {check.detail}")
-    providers_ok = any(c.ok for c in checks if c.name.startswith("Provider"))
+    # manual quotes are always "available": they do not prove a market data source works
+    providers_ok = any(c.ok for c in checks
+                       if c.name.startswith("Provider") and c.name != f"Provider {MANUAL_PROVIDER}")
     config_ok = all(c.ok for c in checks if not c.name.startswith("Provider"))
     return EXIT_OK if providers_ok and config_ok else EXIT_ERROR
 
@@ -170,10 +195,52 @@ def _ecb_series(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _quote(settings: Settings, args: argparse.Namespace) -> int:
+    monitor = MarketMonitor.from_settings(settings)
+    store = monitor.manual_quotes()
+    if store is None:
+        print("error: provider 'manual' absent from providers.priority", file=sys.stderr)
+        return EXIT_ERROR
+    allowed = monitor.manual_ids()
+    if args.action == "import":
+        count = store.import_csv(Path(args.file).read_text(encoding="utf-8-sig"))
+        print(f"{count} cotation(s) importée(s) dans {store.path}")
+        return EXIT_OK
+    instrument = getattr(args, "instrument", None)
+    if instrument and instrument not in allowed:
+        print(f"error: {instrument} has no 'manual' ticker (saisissables : {', '.join(allowed)})",
+              file=sys.stderr)
+        return EXIT_ERROR
+    ticker = monitor.referential.get(instrument).tickers["manual"].ticker if instrument else ""
+    if args.action == "set":
+        day = to_date(args.date) if args.date else previous_business_day()
+        store.set(ticker, day, parse_number(args.value))
+        print(f"{instrument} {day:%d/%m/%Y} = {args.value} -> {store.path}")
+    elif args.action == "delete":
+        found = store.delete(ticker, args.date)
+        print("supprimé" if found else "aucune saisie à cette date")
+        return EXIT_OK if found else EXIT_MISSING_DATA
+    else:
+        frame = store.frame()
+        if ticker:
+            frame = frame[frame["ticker"] == ticker]
+        rows = frame.groupby("ticker").tail(args.last)
+        print(rows.to_string(index=False) if not rows.empty else "aucune saisie")
+    return EXIT_OK
+
+
+def parse_number(text: str) -> float:
+    """``"287,5"`` / ``"1 742.9"`` -> float (French input accepted)."""
+    try:
+        return float(text.replace("\u202f", "").replace(" ", "").replace(",", "."))
+    except ValueError as exc:
+        raise InvalidRequestError(f"not a number: {text!r}") from exc
+
+
 COMMANDS: dict[str, Command] = {
     "doctor": _doctor, "check-referential": _check_referential, "perf": _perf,
     "daily-macro": _daily_macro, "alerts": _alerts, "fetch": _raw, "snapshot": _raw,
-    "cache-clear": _cache_clear, "ecb-series": _ecb_series,
+    "cache-clear": _cache_clear, "ecb-series": _ecb_series, "quote": _quote,
 }
 
 

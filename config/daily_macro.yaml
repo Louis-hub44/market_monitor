@@ -1,18 +1,57 @@
 # Mise en page de l'export « daily macro » (Excel, PNG, texte).
-# Les bandeaux reprennent ceux de la revue : indices, taux 10 ans, marchés clés.
+# Les bandeaux reprennent ceux de la revue : indices, taux 10 ans, marchés clés, spreads.
+#
+# Chaque ligne d'un bandeau est un identifiant (SPX) ou un dictionnaire d'options :
+#   {id: GOLD, label: Or, decimals: 0, suffix: " $", change: pct, change_decimals: 1}
+#     label            libellé affiché (défaut : nom du référentiel)
+#     decimals         décimales du niveau        suffix   texte collé au niveau (remplace « % » / « bps »)
+#     change           pct | bp | abs : unité de variation (ex. VIX en % au lieu de points)
+#     change_decimals  décimales de la variation
+# decimals / suffix / change / change_decimals peuvent aussi être posés au niveau du bandeau.
 
 title: Revue de marché
 
+format:
+  thousands_separator: false   # 6272,95 plutôt que 6 272,95
+  compact_units: true          # 5,27% / −5bps plutôt que 5,27 % / −5 bps
+  bp_unit: bps                 # « bp » au singulier quand |variation| <= 1
+
 sections:
-  - title: Indices actions
-    instruments: [SX5E, CAC, DAX, FTSEMIB, SPX, NDX, NKY]
+  - title: Indices
+    instruments: [SX5E, CAC, SPX, NDX, {id: NKY, decimals: 0}, CSI300]
+
   - title: Taux 10 ans
-    instruments: [BUND_10Y, OAT_10Y, BTP_10Y, UST_10Y, OAT_BUND_10Y, BTP_BUND_10Y]
+    decimals: 2
+    change_decimals: 0
+    instruments:
+      - {id: UST_10Y, label: États-Unis}
+      - {id: BUND_10Y, label: Allemagne}
+      - {id: OAT_10Y, label: France}
+      - {id: BTP_10Y, label: Italie}
+      - {id: GILT_10Y, label: Royaume-Uni}
+      - {id: JGB_10Y, label: Japon}
+
   - title: Marchés clés
-    instruments: [BRENT, EURUSD, VIX, MXEF, GOLD, BTC]
+    change_decimals: 1
+    instruments:
+      - {id: BRENT, suffix: " $"}
+      - EURUSD
+      - {id: VIX, change: pct}
+      - {id: MXEF, label: MSCI EM}
+      - {id: GOLD, decimals: 0, suffix: " $"}
+      - {id: BTC, decimals: 0, suffix: " $"}
+
+  # iTraxx : Bloomberg, sinon saisie manuelle (vue Daily macro / `market-monitor quote set`).
+  - title: Spreads
+    decimals: 1
+    change_decimals: 1
+    instruments:
+      - {id: OAT_BUND_10Y, label: OAT-Bund 10 ans, decimals: 0, change_decimals: 0}
+      - {id: ITRX_MAIN, label: iTraxx Main}
+      - {id: ITRX_XOVER, label: iTraxx Crossover}
 
 # Variations affichées, parmi chg_1d, chg_1w, chg_mtd, chg_ytd
-columns: [chg_1d, chg_ytd]
+columns: [chg_1d]
 
 movers:
   universe: home          # watchlist (ou sélecteur) dans laquelle chercher les mouvements

@@ -65,6 +65,9 @@ PROBES: dict[str, str] = {
     "STOXX": "https://www.stoxx.com/document/Indices/Current/HistoricalData/h_v2tx.txt",
     "CNBC": "https://ts-api.cnbc.com/harmony/app/bars/FR10Y-FR/1D/"
             "20260901000000/20260930235959/adjusted/EST5EDT.json",
+    "MSCI": "https://app2.msci.com/products/service/index/indexmaster/getLevelDataForGraph"
+            "?currency_symbol=USD&index_variant=STRD&start_date=20260901&end_date=20260930"
+            "&data_frequency=DAILY&index_codes=891800",
 }
 
 #: Fragments of the block pages served by corporate web proxies.
