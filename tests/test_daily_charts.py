@@ -55,9 +55,10 @@ def test_repository_layout_has_spreads_and_charts():
     spreads = next(s for s in layout.sections if s.title == "Spreads")
     assert {"HY_IG_EUR", "HY_IG_US", "G_SPREAD_EUR_IG"} <= set(spreads.instruments)
     assert [c.instruments for c in layout.charts] == [
-        ("SX5E",), ("SPX",), ("BUND_10Y",), ("EUR_HY_OAS", "US_HY_OAS"), ("BRENT",), ("VIX",)]
+        ("SX5E",), ("SPX",), ("BUND_10Y", "OAT_10Y"), ("EUR_HY_OAS", "US_HY_OAS"), ("BRENT",), ("VIX",)]
+    assert layout.charts[2].labels == ("Bund", "OAT")
     assert layout.charts[3].labels == ("Euro HY", "US HY")
-    assert [c.period for c in layout.charts] == ["YTD"] * 5 + ["6M"]
+    assert [c.period for c in layout.charts] == ["YTD"] * 5 + ["3M"]
 
 
 # --------------------------------------------------------------------- layout

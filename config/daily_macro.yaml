@@ -64,13 +64,13 @@ sections:
 charts:
   - {title: Euro Stoxx 50, instruments: [SX5E], period: YTD}
   - {title: S&P 500, instruments: [SPX], period: YTD}
-  - {title: Bund 10 ans, instruments: [BUND_10Y], period: YTD}
+  - {title: Bund et OAT 10 ans, instruments: [BUND_10Y, OAT_10Y], labels: [Bund, OAT], period: YTD}
   # Courbes d'OAS (ICE BofA, comme sur FRED), en pb : Euro HY et US HY
   - {title: OAS High Yield, instruments: [EUR_HY_OAS, US_HY_OAS], labels: [Euro HY, US HY], period: YTD}
   # Variante : écart HY-IG
   # - {title: Spread HY-IG, instruments: [HY_IG_EUR, HY_IG_US], labels: [Euro, US], period: YTD}
   - {title: Brent, instruments: [BRENT], period: YTD}
-  - {title: VIX, instruments: [VIX], period: 6M}
+  - {title: VIX, instruments: [VIX], period: 3M}
 
 # Variations affichées, parmi chg_1d, chg_1w, chg_mtd, chg_ytd
 columns: [chg_1d]

@@ -579,8 +579,8 @@ mouvements marquants), tout ce qui doit être vu avant envoi : donnée manquante
 mouvement suspect, changement de contrat, proxy, source de secours, jambes décalées (§ 10.1).
 
 **Graphiques** (section `charts` de `daily_macro.yaml`) : historiques de cours de clôture
-— Euro Stoxx 50, S&P 500, Bund 10 ans, OAS High Yield Euro et US (indices ICE BofA, comme sur
-FRED, en pb), Brent en YTD, et VIX sur 6 mois. Présentation façon Investing : zone remplie
+— Euro Stoxx 50, S&P 500, Bund et OAT 10 ans (même graphique), OAS High Yield Euro et US (indices ICE BofA, comme sur
+FRED, en pb), Brent en YTD, et VIX sur 3 mois. Présentation façon Investing : zone remplie
 sous la courbe, échelle ajustée aux cours de la période (pas depuis zéro), pointillé et
 étiquette du dernier cours sur l'axe de droite. La **variation de la séance** est indiquée
 sous le titre ; le dernier segment, le dernier point et l'étiquette prennent sa couleur
@@ -596,7 +596,7 @@ commande écrit en plus `<préfixe>_<date>_graphiques.png` avec les périodes du
 ```yaml
 charts:
   - {title: OAS High Yield, instruments: [EUR_HY_OAS, US_HY_OAS], labels: [Euro HY, US HY]}
-  - {title: VIX, instruments: [VIX], period: 6M}
+  - {title: VIX, instruments: [VIX], period: 3M}
   - {title: Bund 10 ans, instruments: [BUND_10Y], start: 2026-03-01}   # date de début fixe
 ```
 

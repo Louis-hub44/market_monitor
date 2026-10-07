@@ -1,5 +1,9 @@
 # Historique des versions
 
+## 1.5.3
+- Graphique VIX sur 3 mois par défaut (les autres restent en YTD).
+- OAT 10 ans ajoutée sur le graphique du Bund 10 ans (même axe, en %).
+
 ## 1.5.2 — graphiques plus précis
 - Graduations de dates adaptées à la fenêtre (lundis sur 2 à 6 mois : un VIX sur 3 mois se
   lit semaine par semaine), communes au dashboard et au PNG.
