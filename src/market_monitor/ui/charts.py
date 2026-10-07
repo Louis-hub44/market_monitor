@@ -11,7 +11,14 @@ from plotly.subplots import make_subplots
 from market_monitor.analytics.comparison import ComparisonResult
 from market_monitor.analytics.performance import ZSCORE_HORIZONS, Horizon
 from market_monitor.analytics.quality import needs_check
-from market_monitor.export.charts import MONTHS_SHORT, ChartData, ChartSeries, value_range
+from market_monitor.export.charts import (
+    ChartData,
+    ChartSeries,
+    axis_decimals,
+    date_ticks,
+    period_extremes,
+    value_range,
+)
 from market_monitor.referential import AssetClass, ChangeUnit
 from market_monitor.text_format import (
     ASSET_CLASS_LABELS,
@@ -157,7 +164,7 @@ def rolling_correlation_figure(series: pd.Series, label: str) -> go.Figure:
     return fig
 
 
-def daily_chart_figure(chart: ChartData, height: int = 320) -> go.Figure:
+def daily_chart_figure(chart: ChartData, height: int = 360) -> go.Figure:
     """Price history, Investing-style: area under a single line, last price tagged on the axis.
 
     The last session stays visible: last segment and point in the colour of the move, dotted
@@ -186,18 +193,25 @@ def daily_chart_figure(chart: ChartData, height: int = 320) -> go.Figure:
             hoverinfo="skip",
         ))
         tags.append((s.last, s.level_text(), tone if single else colour))
+        if single:
+            _mark_extremes(fig, s)
     if chart.series:
         span = (pd.Timestamp(chart.end) - pd.Timestamp(chart.start)) * 0.02
         fig.update_xaxes(range=[pd.Timestamp(chart.start), pd.Timestamp(chart.end) + span])
         fig.update_yaxes(range=list(value_range(chart)))
-    tick_values, tick_text = french_date_ticks(pd.Timestamp(chart.start), pd.Timestamp(chart.end))
-    fig.update_xaxes(showgrid=False, color=theme.MUTED, tickvals=tick_values, ticktext=tick_text,
-                     hoverformat="%d/%m/%Y", showline=True, linecolor=theme.RULE)
-    fig.update_yaxes(side="right", gridcolor=theme.RULE, color=theme.MUTED, zeroline=False,
-                     tickformat=",~r", ticksuffix=f" {chart.unit_label}" if chart.unit_label else "")
+    ticks = date_ticks(chart.start, chart.end)
+    spikes = {"showspikes": True, "spikemode": "across", "spikesnap": "cursor",
+              "spikethickness": -1, "spikedash": "dot", "spikecolor": theme.MUTED}  # -1: no halo
+    fig.update_xaxes(showgrid=True, gridcolor=_rgba(theme.RULE, 0.5), color=theme.MUTED,
+                     tickvals=[t for t, _ in ticks], ticktext=[label for _, label in ticks],
+                     hoverformat="%d/%m/%Y", showline=True, linecolor=theme.RULE, **spikes)
+    decimals = axis_decimals(chart) if chart.series else 2
+    fig.update_yaxes(side="right", gridcolor=theme.RULE, color=theme.MUTED, zeroline=False, nticks=8,
+                     tickformat=f",.{decimals}f",
+                     ticksuffix=f" {chart.unit_label}" if chart.unit_label else "", **spikes)
     _apply_layout(fig, height=height)
     fig.update_layout(
-        hovermode="x unified", showlegend=not single,
+        hovermode="x unified", showlegend=not single, spikedistance=-1,
         legend={"orientation": "h", "y": 1.02, "x": 0, "yanchor": "bottom", "font": {"color": theme.TEXT}},
         margin={"l": 0, "r": 78, "t": 8 if single else 28, "b": 0},
     )
@@ -211,26 +225,22 @@ def daily_chart_figure(chart: ChartData, height: int = 320) -> go.Figure:
     return fig
 
 
+def _mark_extremes(fig: go.Figure, series: ChartSeries) -> None:
+    """Period high and low: small markers with level and date."""
+    decimals = _hover_decimals(series)
+    for (when, level), position in zip(period_extremes(series.values), ("top center", "bottom center"),
+                                       strict=True):
+        fig.add_trace(go.Scatter(
+            x=[when], y=[level], mode="markers+text", showlegend=False, hoverinfo="skip",
+            marker={"size": 5, "color": theme.MUTED},
+            text=[f"{fr_number(level, decimals)} ({when:%d/%m})"], textposition=position,
+            textfont={"size": 10, "color": theme.MUTED},
+        ))
+
+
 def _rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip("#")
     return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{alpha})"
-
-
-def french_date_ticks(start: pd.Timestamp, end: pd.Timestamp,
-                      max_ticks: int = 6) -> tuple[list[pd.Timestamp], list[str]]:
-    """French axis ticks: month starts (``janv.``), or days (``14 sept.``) on short windows."""
-    if (end - start).days > 730:
-        years = pd.date_range(start + pd.Timedelta(days=1), end, freq="YS")
-        return list(years), [str(t.year) for t in years]
-    if (end - start).days > 70:
-        months = pd.date_range(start + pd.Timedelta(days=1), end, freq="MS")
-        step = max(1, -(-len(months) // max_ticks))
-        ticks = list(months[::step])
-        text = [MONTHS_SHORT[t.month - 1] + (f" {t.year}" if t.month == 1 and step < 12 else "")
-                for t in ticks]
-        return ticks, text
-    days = pd.date_range(start, end, periods=min(max_ticks, max((end - start).days, 1) + 1)).normalize()
-    return list(days), [f"{t.day} {MONTHS_SHORT[t.month - 1]}" for t in days]
 
 
 def _hover_decimals(series: ChartSeries) -> int:

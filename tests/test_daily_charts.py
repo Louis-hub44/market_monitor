@@ -10,13 +10,16 @@ from market_monitor.export import export_daily_macro
 from market_monitor.export.charts import (
     ChartData,
     ChartSeries,
+    axis_decimals,
     build_charts,
     chart_window,
     charts_png_bytes,
+    date_ticks,
+    period_extremes,
 )
 from market_monitor.export.layout import ChartSpec, layout_from_dict, load_layout
 from market_monitor.referential import ReferentialError, load_referential
-from market_monitor.ui.charts import daily_chart_figure, french_date_ticks
+from market_monitor.ui.charts import daily_chart_figure
 from market_monitor.ui.daily_macro_view import chart_header_html
 from tests.conftest import FakeResponse, FakeSession
 from tests.synthetic import synthetic_monitor
@@ -134,13 +137,34 @@ def test_png_and_plotly(monitor):
     assert "Spread HY-IG Euro" in html and "pb" in html and "6 mois" in html
 
 
-def test_french_date_ticks():
-    _, text = french_date_ticks(pd.Timestamp("2025-12-31"), pd.Timestamp("2026-10-06"))
-    assert text[0] == "janv. 2026" and "sept." in text
-    _, text = french_date_ticks(pd.Timestamp("2026-09-06"), pd.Timestamp("2026-10-06"))
-    assert text[-1] == "6 oct."
-    _, text = french_date_ticks(pd.Timestamp("2021-10-06"), pd.Timestamp("2026-10-06"))
-    assert text == ["2022", "2023", "2024", "2025", "2026"]
+def test_date_ticks_follow_the_window():
+    def labels(start, end):
+        return [label for _, label in date_ticks(date.fromisoformat(start), date.fromisoformat(end))]
+
+    assert labels("2025-12-31", "2026-10-06")[0] == "janv. 2026"            # YTD: months
+    three_months = date_ticks(date(2026, 7, 6), date(2026, 10, 6))         # 3M: Mondays
+    assert 5 <= len(three_months) <= 7 and all(t.weekday() == 0 for t, _ in three_months)
+    assert three_months[0][1] == "13 juil."
+    one_month = labels("2026-09-06", "2026-10-06")
+    assert one_month == ["7 sept.", "14 sept.", "21 sept.", "28 sept.", "5 oct."]
+    assert labels("2026-09-28", "2026-10-06")[-1] == "6 oct."             # days
+    assert labels("2021-10-06", "2026-10-06") == ["2022", "2023", "2024", "2025", "2026"]
+
+
+def test_axis_decimals_and_extremes():
+    vix = REF.get("VIX")
+    values = pd.Series([15.2, 22.4, 14.1, 16.0],
+                       index=pd.to_datetime(["2026-09-01", "2026-09-12", "2026-09-20", "2026-10-06"]))
+    chart = ChartData(ChartSpec("VIX", ("VIX",), "3M"), date(2026, 7, 6), date(2026, 10, 6),
+                      (ChartSeries("VIX", "VIX", values, vix),))
+    assert axis_decimals(chart) == 1                       # 8,3 points over the window
+    (high_day, high), (low_day, low) = period_extremes(values)
+    assert (high_day, high, low_day, low) == (pd.Timestamp("2026-09-12"), 22.4,
+                                              pd.Timestamp("2026-09-20"), 14.1)
+    fig = daily_chart_figure(chart)
+    texts = [t.text[0] for t in fig.data if t.mode == "markers+text"]
+    assert texts == ["22,40 (12/09)", "14,10 (20/09)"]
+    assert fig.layout.yaxis.tickformat == ",.1f" and fig.layout.xaxis.showspikes
 
 
 def test_export_writes_charts_png(monitor, tmp_path):

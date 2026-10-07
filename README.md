@@ -584,7 +584,11 @@ FRED, en pb), Brent en YTD, et VIX sur 6 mois. Présentation façon Investing : 
 sous la courbe, échelle ajustée aux cours de la période (pas depuis zéro), pointillé et
 étiquette du dernier cours sur l'axe de droite. La **variation de la séance** est indiquée
 sous le titre ; le dernier segment, le dernier point et l'étiquette prennent sa couleur
-(hausse / baisse). Le graphique HY-IG reste disponible en une ligne (commentée dans le fichier). Dans la vue *Daily macro*,
+(hausse / baisse). Le graphique HY-IG reste disponible en une ligne (commentée dans le fichier).
+Pour la lecture fine : graduations de dates adaptées à la fenêtre (semaine par semaine de 2 à
+6 mois, jour par jour sous deux semaines, mois puis années au-delà), axe vertical plus dense
+dont les décimales suivent l'amplitude, plus haut et plus bas de la période étiquetés (niveau
+et date), réticule au survol avec la date et la valeur exactes. Dans la vue *Daily macro*,
 la période se change graphique par graphique (1M à 5A, YTD, ou « Depuis une date… ») ;
 *Télécharger les graphiques (PNG)* reprend les périodes choisies. L'export en ligne de
 commande écrit en plus `<préfixe>_<date>_graphiques.png` avec les périodes du fichier.

@@ -1,5 +1,11 @@
 # Historique des versions
 
+## 1.5.2 — graphiques plus précis
+- Graduations de dates adaptées à la fenêtre (lundis sur 2 à 6 mois : un VIX sur 3 mois se
+  lit semaine par semaine), communes au dashboard et au PNG.
+- Axe vertical plus dense, décimales selon l'amplitude ; plus haut et plus bas de la période
+  étiquetés ; réticule et info-bulle date / valeur exactes dans le dashboard.
+
 ## 1.5.1 — graphiques façon Investing, courbes d'OAS
 - Graphiques de la daily macro présentés comme un historique de cours (Investing) : zone
   remplie, échelle ajustée aux cours, pointillé et étiquette du dernier cours sur l'axe de

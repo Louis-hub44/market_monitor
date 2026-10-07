@@ -20,7 +20,7 @@ from typing import BinaryIO
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.dates import AutoDateLocator, date2num, num2date
+from matplotlib.dates import date2num
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 
@@ -141,16 +141,49 @@ def build_charts(monitor: MarketMonitor, specs: Sequence[ChartSpec], as_of: date
     return charts
 
 
+# ====================================================================== axes
+def date_ticks(start: date, end: date, max_ticks: int = 7) -> list[tuple[pd.Timestamp, str]]:
+    """French date ticks scaled to the window, shared by the dashboard and the PNG.
+
+    Years beyond two years, months beyond ~7 months, Mondays (every 1-2 weeks) on 1-6
+    months - a 3-month VIX reads week by week - and days below two weeks.
+    """
+    first, last = pd.Timestamp(start), pd.Timestamp(end)
+    days = (last - first).days
+    if days > 730:
+        years = _thin(pd.date_range(first + pd.Timedelta(days=1), last, freq="YS"), max_ticks)
+        return [(t, str(t.year)) for t in years]
+    if days > 200:
+        months = _thin(pd.date_range(first + pd.Timedelta(days=1), last, freq="MS"), max_ticks)
+        return [(t, MONTHS_SHORT[t.month - 1] + (f" {t.year}" if t.month == 1 else "")) for t in months]
+    if days > 14:
+        dates = _thin(pd.date_range(first + pd.Timedelta(days=1), last, freq="W-MON"), max_ticks)
+    else:
+        dates = _thin(pd.bdate_range(first, last), max_ticks)
+    return [(t, f"{t.day} {MONTHS_SHORT[t.month - 1]}") for t in dates]
+
+
+def _thin(ticks: pd.DatetimeIndex, max_ticks: int) -> list[pd.Timestamp]:
+    step = max(1, -(-len(ticks) // max_ticks))
+    return list(ticks[::step])
+
+
+def period_extremes(series: pd.Series) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]]:
+    """``((date, high), (date, low))`` of the window - the levels a reader looks for first."""
+    high, low = pd.Timestamp(series.idxmax()), pd.Timestamp(series.idxmin())  # type: ignore[arg-type]
+    return (high, float(series.max())), (low, float(series.min()))
+
+
+def axis_decimals(chart: ChartData, ticks: int = 7) -> int:
+    """Decimals that keep neighbouring axis labels distinct (VIX 15,5 / 16,0 over 3 months)."""
+    span = max(float(s.values.max() - s.values.min()) for s in chart.series) or 1.0
+    step = span / ticks
+    return 0 if step >= 5 else (1 if step >= 0.25 else (2 if step >= 0.025 else 3))
+
+
 # ====================================================================== PNG
 COLUMNS, CELL_W_IN, CELL_H_IN = 2, 4.0, 2.7
 RIGHT_MARGIN = 0.03  # share of the window left blank after the last date
-
-
-def _fr_date(x: float, _pos: int) -> str:
-    d = num2date(x)
-    if d.day != 1:
-        return f"{d.day} {MONTHS_SHORT[d.month - 1]}"
-    return str(d.year) if d.month == 1 else MONTHS_SHORT[d.month - 1]
 
 
 def _draw(ax: Axes, chart: ChartData) -> None:
@@ -194,16 +227,19 @@ def _draw(ax: Axes, chart: ChartData) -> None:
             bbox={"boxstyle": "square,pad=0.25", "facecolor": tag, "edgecolor": tag},
             annotation_clip=False, zorder=5,
         )
+        if single:
+            _mark_extremes(ax, s)
         prefix = f"{s.label} " if len(chart.series) > 1 else ""
         subtitle.append((f"{prefix}{s.level_text()}", f" {s.change_text()}", tone))
     ax.set_ylim(low, high)
     _subtitle(ax, subtitle)
     left, right = float(date2num(chart.start)), float(date2num(chart.end))
     ax.set_xlim(left, right + RIGHT_MARGIN * (right - left))  # room for the last point
-    ax.xaxis.set_major_locator(AutoDateLocator(minticks=3, maxticks=6))
-    ax.xaxis.set_major_formatter(FuncFormatter(_fr_date))
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: fr_number(v, _axis_decimals(chart))
+    ticks = date_ticks(chart.start, chart.end)
+    ax.set_xticks([float(date2num(t)) for t, _ in ticks], [label for _, label in ticks])
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]))
+    decimals = axis_decimals(chart)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: fr_number(v, decimals)
                                                .replace(NNBSP, " ")))
     ax.yaxis.tick_right()
     if len(chart.series) > 1:
@@ -211,7 +247,19 @@ def _draw(ax: Axes, chart: ChartData) -> None:
                   framealpha=0.85, labelcolor=INK)
 
 
-def value_range(chart: ChartData, pad: float = 0.08) -> tuple[float, float]:
+def _mark_extremes(ax: Axes, series: ChartSeries) -> None:
+    """Small labels at the period's high and low (level and date)."""
+    decimals = level_decimals(series.instrument.asset_class.value, series.instrument.quote.value,
+                              series.last)
+    for (when, level), va, dy in zip(period_extremes(series.values), ("bottom", "top"), (3, -3),
+                                     strict=True):
+        ax.plot([float(date2num(when))], [level], "o", color=MUTED, markersize=2.5)
+        ax.annotate(f"{fr_number(level, decimals)} ({when:%d/%m})".replace(NNBSP, "\u00a0"),
+                    xy=(when, level), xytext=(0, dy), textcoords="offset points", ha="center",
+                    va=va, fontsize=6, color=MUTED)
+
+
+def value_range(chart: ChartData, pad: float = 0.10) -> tuple[float, float]:
     """Y range fitted to the data (not to zero), with a margin: moves stay readable."""
     low = min(float(s.values.min()) for s in chart.series)
     high = max(float(s.values.max()) for s in chart.series)
@@ -230,11 +278,6 @@ def _subtitle(ax: Axes, parts: list[tuple[str, str, str]]) -> None:
                              fontsize=7.5, color=colour, va="bottom", ha="left")
             box = artist.get_window_extent(renderer=renderer)
             x += box.width / ax.get_window_extent(renderer=renderer).width
-
-
-def _axis_decimals(chart: ChartData) -> int:
-    span = max(float(s.values.max() - s.values.min()) for s in chart.series)
-    return 0 if span >= 20 else (1 if span >= 2 else 2)
 
 
 def render_charts_png(charts: Sequence[ChartData], target: str | Path | BinaryIO,
