@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -57,6 +57,8 @@ class PerformanceReport:
     notes: dict[str, list[str]] = field(default_factory=dict)
     origins: dict[str, str] = field(default_factory=dict)
     levels: pd.DataFrame = field(default_factory=pd.DataFrame, repr=False)
+    #: ids whose print dated ``as_of`` was dropped: session still open (closing prices only)
+    provisional: frozenset[str] = frozenset()
 
     def checks(self) -> dict[str, list[str]]:
         """Points to check before publishing, per instrument id (see :mod:`.analytics.quality`)."""
@@ -119,7 +121,11 @@ class MarketMonitor:
 
     def today(self) -> date:
         """Current date in the market time zone."""
-        return datetime.now(self._tz).date()
+        return self.now().date()
+
+    def now(self) -> datetime:
+        """Current time in the market time zone (Europe/Paris)."""
+        return datetime.now(self._tz)
 
     def is_available(self, instrument_id: str) -> bool:
         """True when an active provider has a ticker for it (all legs, for a derived one).
@@ -151,11 +157,19 @@ class MarketMonitor:
         watchlist: str | None = "home",
         as_of: DateLike | None = None,
         ids: Iterable[str] | None = None,
+        *,
+        provisional: Collection[str] = (),
     ) -> PerformanceReport:
-        """Levels, changes and z-scores for a watchlist as of a date (default: today)."""
+        """Levels, changes and z-scores for a watchlist as of a date (default: today).
+
+        ``provisional``: ids whose print dated ``as_of`` is a live quote of a session not
+        closed yet; it is ignored, so the line shows its last close.
+        """
         as_of_date = to_date(as_of) if as_of is not None else self.today()
         selected = self.select(watchlist, ids)
         hist = self.history(selected, required_start(as_of_date, self._engine.settings), as_of_date)
+        dropped = frozenset(i for i in provisional if i in hist.levels.columns)
+        drop_session(hist.levels, dropped, as_of_date)
         instruments = [self._referential.get(i) for i in selected]
         table = self._engine.compute(hist.levels, instruments, as_of_date)
         table["source"] = pd.Series(hist.sources, dtype="object").reindex(table.index)
@@ -163,7 +177,8 @@ class MarketMonitor:
         table["origin"] = pd.Series(hist.origins, dtype="object").reindex(table.index)
         return PerformanceReport(as_of_date, table, dict(hist.errors), dict(hist.warnings),
                                  notes={k: list(v) for k, v in hist.notes.items()},
-                                 origins=dict(hist.origins), levels=hist.levels)
+                                 origins=dict(hist.origins), levels=hist.levels,
+                                 provisional=dropped)
 
     # ------------------------------------------------------------ cross-check
     def verify(self, report: PerformanceReport, ids: Iterable[str]) -> PerformanceReport:
@@ -199,6 +214,7 @@ class MarketMonitor:
         if missing:
             start = report.as_of - timedelta(days=CHECK_HISTORY_DAYS)
             hist = self.history(missing, start, report.as_of)
+            drop_session(hist.levels, report.provisional, report.as_of)  # same closes as the report
             found.update({i: hist.levels[i] for i in missing if i in hist.levels.columns})
             report.origins.update({i: o for i, o in hist.origins.items() if i not in report.origins})
         return found
@@ -313,3 +329,10 @@ def _second_label(provider: str, ticker: str) -> str:
     if provider == "free":
         return source_label(ticker)
     return {"bloomberg": "Bloomberg", "fmp": "FMP"}.get(provider, provider)
+
+
+def drop_session(levels: pd.DataFrame, ids: Collection[str], day: date) -> None:
+    """Blank (in place) the prints of ``ids`` dated ``day``: an open session is not a close."""
+    columns = [i for i in ids if i in levels.columns]
+    if columns:
+        levels.loc[levels.index == pd.Timestamp(day), columns] = float("nan")

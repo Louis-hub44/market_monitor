@@ -1,5 +1,14 @@
 # Historique des versions
 
+## 1.5.4 — revue du matin : clôtures et chiffres cohérents
+- **Correctif** : les graphiques de la daily macro réutilisent les séries du bandeau au lieu
+  de les relire. Avant, une seconde lecture (autre fenêtre, autre moment, autre alternative de
+  la chaîne) pouvait afficher un autre cours : Euro Stoxx 50 6 222,60 sur le graphique contre
+  6 173,37 dans le bandeau, Bund 3,530 % contre 3,486 %.
+- **Clôtures uniquement** (`closing_prices` dans `daily_macro.yaml`) : un cours du jour dont
+  la séance n'est pas close (ex. OAT en séance le matin) est ignoré dans les bandeaux, les
+  graphiques et le contrôle croisé ; la vue indique les lignes concernées.
+
 ## 1.5.3
 - Graphique VIX sur 3 mois par défaut (les autres restent en YTD).
 - OAT 10 ans ajoutée sur le graphique du Bund 10 ans (même axe, en %).

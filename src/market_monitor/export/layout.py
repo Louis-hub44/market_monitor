@@ -19,6 +19,7 @@ from market_monitor.export.display import (
     NumberStyle,
 )
 from market_monitor.referential import Referential, ReferentialError
+from market_monitor.sessions import ClosingRule, closing_rule_from_dict
 
 EXPORTABLE_COLUMNS = ("chg_1d", "chg_1w", "chg_mtd", "chg_ytd")
 
@@ -67,10 +68,15 @@ class DailyMacroLayout:
     file_prefix: str = "daily_macro"
     style: NumberStyle = DEFAULT_STYLE
     charts: tuple[ChartSpec, ...] = ()
+    closing: ClosingRule = ClosingRule()  # closes only: today's open sessions are ignored
 
     @property
     def section_ids(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(i for s in self.sections for i in s.instruments))
+
+    @property
+    def chart_ids(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(i for c in self.charts for i in c.instruments))
 
 
 def load_layout(path: str | Path, referential: Referential) -> DailyMacroLayout:
@@ -106,6 +112,7 @@ def layout_from_dict(raw: Mapping[str, Any], referential: Referential) -> DailyM
         file_prefix=prefix,
         style=_style(raw.get("format") or {}),
         charts=tuple(_chart(c, referential, k) for k, c in enumerate(raw.get("charts") or [])),
+        closing=closing_rule_from_dict(raw.get("closing_prices")),
     )
 
 

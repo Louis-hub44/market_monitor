@@ -54,6 +54,17 @@ sections:
       - {id: HY_IG_US, label: HY-IG US, decimals: 0, change_decimals: 0}
       - {id: G_SPREAD_EUR_IG, label: G spread Euro IG, decimals: 0, change_decimals: 0}
 
+# Clôtures uniquement. Quand la revue est datée du jour, un cours du jour dont la séance
+# n'est pas encore close (cours en séance) est ignoré : la ligne et son graphique montrent
+# la dernière clôture. Heures de Paris après lesquelles la séance du jour est close ; le
+# plus précis l'emporte (instrument > groupe > classe > défaut). Mettre false pour désactiver.
+closing_prices:
+  default: "17:45"
+  classes: {rates: "18:00", credit: "18:00", fx: "23:05", commodities: "20:45",
+            volatility: "22:20", crypto: "23:59"}
+  groups: {États-Unis: "23:05", Japon: "08:35"}
+  instruments: {NKY: "08:35", CSI300: "09:05", MXEF: "23:30"}
+
 # Graphiques (vue Daily macro et PNG « graphiques » de l'export). Par graphique :
 #   title        titre affiché
 #   instruments  1 à 4 identifiants (un seul axe : même unité, ex. deux spreads en pb)

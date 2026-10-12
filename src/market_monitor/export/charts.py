@@ -10,7 +10,7 @@ colour of that move.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from io import BytesIO
@@ -26,7 +26,7 @@ from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 from market_monitor.analytics.comparison import period_start
 from market_monitor.export.layout import ChartSpec
-from market_monitor.monitor import MarketMonitor
+from market_monitor.monitor import MarketMonitor, drop_session
 from market_monitor.referential import ChangeUnit, Instrument
 from market_monitor.text_format import NNBSP, format_change, fr_number, level_decimals
 
@@ -113,9 +113,15 @@ def chart_window(spec: ChartSpec, as_of: date) -> tuple[date, date]:
 
 
 def build_charts(monitor: MarketMonitor, specs: Sequence[ChartSpec], as_of: date,
-                 overrides: Mapping[int, ChartSpec] | None = None) -> list[ChartData]:
-    """One history call for every chart (instruments no active provider serves are skipped).
+                 overrides: Mapping[int, ChartSpec] | None = None, *,
+                 base: pd.DataFrame | None = None,
+                 provisional: Collection[str] = ()) -> list[ChartData]:
+    """Chart series for ``specs`` (instruments no active provider serves are skipped).
 
+    ``base`` - the levels behind the daily-macro bands - is used as is wherever it has data,
+    so a chart and its band line always show the same print; only what it lacks (older
+    history for a long window, an instrument outside the bands) is loaded, in one call.
+    ``provisional``: ids whose print dated ``as_of`` is an open session, ignored (closes only).
     ``overrides`` replaces chart ``k``'s spec (period / dates changed in the dashboard).
     """
     specs = [(overrides or {}).get(k, spec) for k, spec in enumerate(specs)]
@@ -123,22 +129,50 @@ def build_charts(monitor: MarketMonitor, specs: Sequence[ChartSpec], as_of: date
     ids = list(dict.fromkeys(i for spec in specs for i in monitor.available(spec.instruments)))
     if not ids:
         return [ChartData(spec, *window, ()) for spec, window in zip(specs, windows, strict=True)]
-    hist = monitor.history(ids, min(w[0] for w in windows), as_of)
+    levels, errors_by_id = _chart_levels(monitor, ids, min(w[0] for w in windows), as_of, base)
+    drop_session(levels, provisional, as_of)
     ref = monitor.referential
     charts = []
     for spec, (start, end) in zip(specs, windows, strict=True):
         series, errors = [], {}
         for k, instrument_id in enumerate(spec.instruments):
             inst = ref.get(instrument_id)
-            column = hist.levels.get(instrument_id)
+            column = levels.get(instrument_id)
             values = (column.loc[pd.Timestamp(start):pd.Timestamp(end)].dropna()
                       if column is not None else pd.Series(dtype="float64"))
             if values.empty:
-                errors[instrument_id] = hist.errors.get(instrument_id, "aucune donnée sur la période")
+                errors[instrument_id] = errors_by_id.get(instrument_id, "aucune donnée sur la période")
                 continue
             series.append(ChartSeries(instrument_id, spec.label(k, inst.name), values, inst))
         charts.append(ChartData(spec, start, end, tuple(series), errors))
     return charts
+
+
+def _chart_levels(monitor: MarketMonitor, ids: list[str], start: date, end: date,
+                  base: pd.DataFrame | None) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Levels of ``ids`` on ``[start, end]``: ``base`` wherever it covers, the rest loaded.
+
+    Per instrument: the band's series, preceded - for a window longer than the bands' -
+    by the older part of a loaded history; instruments outside the bands are loaded.
+    """
+    covered = [] if base is None else [i for i in ids if i in base.columns]
+    base_start = base.index.min() if covered and base is not None else None
+    older_needed = base_start is not None and base_start > pd.Timestamp(start)
+    to_load = [i for i in ids if i not in covered or older_needed]
+    loaded, errors = pd.DataFrame(), {}
+    if to_load:
+        hist = monitor.history(to_load, start, end)
+        loaded, errors = hist.levels, dict(hist.errors)
+    empty = pd.Series(dtype="float64", index=pd.DatetimeIndex([]))
+    columns = {}
+    for instrument_id in ids:
+        fetched = loaded[instrument_id] if instrument_id in loaded.columns else empty
+        if instrument_id in covered and base is not None:
+            older = fetched[fetched.index < base_start]
+            columns[instrument_id] = pd.concat([older, base[instrument_id]])
+        else:
+            columns[instrument_id] = fetched
+    return pd.DataFrame(columns).sort_index(), errors
 
 
 # ====================================================================== axes

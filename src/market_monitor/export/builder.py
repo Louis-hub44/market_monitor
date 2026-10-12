@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 
 from market_monitor.alerts import AlertReport, AlertRule, evaluate, rule_universe
 from market_monitor.analytics.performance import Horizon, rank_movers
-from market_monitor.data.models import DateLike
+from market_monitor.data.models import DateLike, to_date
 from market_monitor.export.display import DEFAULT_LINE, DEFAULT_STYLE, NumberStyle, decorate
 from market_monitor.export.layout import DailyMacroLayout, MoversRule, Section
 from market_monitor.monitor import MarketMonitor
@@ -32,6 +32,10 @@ class DailyMacroData:
     warnings: dict[str, str] = field(default_factory=dict)
     checks: dict[str, list[str]] = field(default_factory=dict)  # id -> points to check
     style: NumberStyle = DEFAULT_STYLE
+    #: levels behind the bands (closes only): the charts reuse them, so both always agree
+    levels: pd.DataFrame = field(default_factory=pd.DataFrame, repr=False)
+    #: ids (bands and charts) whose session of ``as_of`` was still open: last close shown
+    provisional: frozenset[str] = frozenset()
 
     def shown(self) -> pd.DataFrame:
         """Rows that end up in the published bands or movers, once each."""
@@ -47,15 +51,24 @@ def _rows(table: pd.DataFrame, ids: Sequence[str]) -> pd.DataFrame:
 
 def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
                       as_of: DateLike | None = None,
-                      rules: Sequence[AlertRule] = ()) -> DailyMacroData:
+                      rules: Sequence[AlertRule] = (), *,
+                      now: datetime | None = None) -> DailyMacroData:
     """One ``performance`` call over sections, movers universe and alert rules, then slicing.
+
+    Closing prices only: when the review is dated today, a print of today whose session is
+    still open (``layout.closing``, Paris time ``now``) is ignored - the line shows its
+    last close, in the bands as in the charts.
 
     Every line that may be published - the bands and the movers candidates - is
     cross-checked against a second source first, so a bad print is listed under "À
     vérifier avant diffusion" instead of being reported as a move.
     """
     ids = list(dict.fromkeys(layout.section_ids + layout.movers.universe + rule_universe(rules)))
-    report = monitor.performance(watchlist=None, as_of=as_of, ids=ids)
+    clock = now or monitor.now()
+    day = to_date(as_of) if as_of is not None else clock.date()
+    provisional = (layout.closing.open_sessions(monitor.referential, ids + list(layout.chart_ids), clock)
+                   if day == clock.date() else set())
+    report = monitor.performance(watchlist=None, as_of=day, ids=ids, provisional=provisional)
     published = list(layout.section_ids) + movers_candidates(
         _rows(report.table, layout.movers.universe), layout.movers)
     monitor.verify(report, published)
@@ -75,6 +88,8 @@ def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
         warnings=dict(report.warnings),
         checks=report.checks(),
         style=layout.style,
+        levels=report.levels,
+        provisional=frozenset(provisional),
     )
 
 

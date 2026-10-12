@@ -602,6 +602,15 @@ charts:
 
 Un graphique a un seul axe : n'y regrouper que des instruments de même unité (au plus 4).
 
+**Clôtures uniquement, bandeaux et graphiques identiques.** Les graphiques réutilisent
+exactement les séries du bandeau (seul l'historique plus ancien d'une fenêtre longue, ou un
+instrument hors bandeau, est chargé à part) : un graphique et sa ligne affichent toujours le
+même dernier cours. Quand la revue est datée du jour, un cours du jour dont la séance n'est
+pas close à l'heure du calcul (section `closing_prices` de `daily_macro.yaml`, heures de
+Paris par classe, groupe ou instrument) est ignoré : à 9 h, l'Euro Stoxx 50, le Bund et
+l'OAT montrent la clôture de la veille, le Nikkei celle du jour. La vue *Daily macro*
+indique les lignes concernées. Le reste du dashboard continue d'afficher les cours en séance.
+
 ### 10.1 Contrôles avant publication
 
 ![Bandeaux avec lignes à vérifier (données synthétiques)](docs/daily_macro_controles.png)

@@ -78,7 +78,8 @@ def render_daily_macro(monitor: MarketMonitor, ui: UiSettings, layout: DailyMacr
     c3.download_button("Télécharger le texte", bundle.text.encode("utf-8"), f"{stem}.txt",
                        "text/plain", key=f"{key}-dl-txt")
     st.image(bundle.png, width="stretch")
-    _charts(monitor, ui, layout, bundle.data.as_of, key)
+    _closing_note(monitor, bundle.data)
+    _charts(monitor, ui, layout, bundle.data, key)
     st.markdown("**Texte prêt à coller**")
     st.code(bundle.text, language=None, wrap_lines=True)
 
@@ -170,16 +171,29 @@ def _save(monitor: MarketMonitor, store: ManualQuotes, values: dict[str, float |
 
 # ====================================================================== charts
 def _compute_charts(_monitor: MarketMonitor, monitor_id: int, specs: tuple[ChartSpec, ...],
-                    as_of: str, nonce: int) -> tuple[list[ChartData], bytes]:
-    charts = build_charts(_monitor, specs, date.fromisoformat(as_of))
+                    as_of: str, nonce: int, base: pd.DataFrame,
+                    provisional: tuple[str, ...]) -> tuple[list[ChartData], bytes]:
+    charts = build_charts(_monitor, specs, date.fromisoformat(as_of), base=base,
+                          provisional=provisional)
     return charts, charts_png_bytes(charts)
 
 
-def _charts(monitor: MarketMonitor, ui: UiSettings, layout: DailyMacroLayout, as_of: date,
+def _closing_note(monitor: MarketMonitor, data: DailyMacroData) -> None:
+    """Which lines show yesterday's close because today's session is still open."""
+    if not data.provisional:
+        return
+    names = sorted(monitor.referential.get(i).name for i in data.provisional
+                   if i in monitor.referential)
+    st.caption(f"Clôtures uniquement : séance du {data.as_of:%d/%m} encore ouverte, dernière clôture "
+               f"retenue pour {', '.join(names)}.")
+
+
+def _charts(monitor: MarketMonitor, ui: UiSettings, layout: DailyMacroLayout, data: DailyMacroData,
             key: str) -> None:
-    """Grid of charts; each has its own period (or start date), changed in place."""
+    """Grid of charts on the bands' own levels; each has its own period, changed in place."""
     if not layout.charts:
         return
+    as_of = data.as_of
     st.markdown('<div class="mm-section">Graphiques</div>', unsafe_allow_html=True)
     cells = [c for k in range(0, len(layout.charts), CHART_COLUMNS)
              for c in st.columns(CHART_COLUMNS, gap="large")][:len(layout.charts)]
@@ -191,7 +205,8 @@ def _charts(monitor: MarketMonitor, ui: UiSettings, layout: DailyMacroLayout, as
             slots.append((header, st.empty()))
     compute = cached(_compute_charts, ui, "Préparation des graphiques…")
     try:
-        charts, png = compute(monitor, id(monitor), tuple(specs), as_of.isoformat(), refresh_nonce(key))
+        charts, png = compute(monitor, id(monitor), tuple(specs), as_of.isoformat(), refresh_nonce(key),
+                              data.levels, tuple(sorted(data.provisional)))
     except MarketMonitorError as exc:
         st.error(f"Graphiques impossibles : {exc}")
         return

@@ -43,7 +43,8 @@ def export_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout, out_dir
     charts = None
     if layout.charts:
         charts = folder / f"{stem.name}_graphiques.png"
-        render_charts_png(build_charts(monitor, layout.charts, data.as_of), charts)
+        render_charts_png(build_charts(monitor, layout.charts, data.as_of, base=data.levels,
+                                       provisional=data.provisional), charts)
     return ExportResult(paths["xlsx"], paths["png"], paths["txt"], data, charts)
 
 
