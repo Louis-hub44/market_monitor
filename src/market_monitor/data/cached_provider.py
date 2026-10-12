@@ -14,7 +14,9 @@ Segments are always contiguous with the coverage, so coverage stays one interval
 A series is never made of two sources. Each entry records its ``origin`` (the
 alternative of a ``a|b`` fallback chain that served it); when a refresh is answered by
 another alternative, the whole window is reloaded from it instead of being spliced, and
-history extended to the left is asked from the cached origin itself.
+history extended to the left is asked from the cached origin itself. A series served by a
+fallback is re-asked in full from the chain at each refresh, so the preferred source takes
+it back as soon as it answers.
 """
 
 from __future__ import annotations
@@ -99,6 +101,10 @@ class CachedProvider(DataProvider):
         plan: dict[tuple[Segment, ...], list[str]] = defaultdict(list)
         for ticker, entry in entries.items():
             segments = self._missing_segments(entry, request.start, end, now)
+            if segments and entry is not None and fallback_origin(ticker, _origin(entry, ticker)):
+                # served by a fallback: each refresh gives the preferred source the whole
+                # window again, so a transient failure does not pin the series on the fallback
+                segments = [(min(request.start, entry.covered_start), max(end, entry.covered_end))]
             if segments:
                 plan[tuple(segments)].append(ticker)
 

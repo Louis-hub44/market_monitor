@@ -315,6 +315,21 @@ def test_cnbc_reports_what_it_received_then_gives_up():
     assert len(client._session.calls) == 9  # 3 symbols x (1 call + 2 retries)
 
 
+def test_cnbc_long_window_refused_is_fetched_in_pieces():
+    from market_monitor.data.providers.public import CnbcClient
+
+    refusal = {"status": "ERROR", "statusMessage": "503 Backend fetch failed"}
+    bars = [{"close": "3.4857", "tradeTime": "20261009000000"}]
+    session = FakeSession([FakeResponse(200, payload=refusal)] * 3
+                          + [FakeResponse(200, payload={"barData": {"priceBars": []}})] * 3
+                          + [FakeResponse(200, payload={"barData": {"priceBars": bars}})])
+    series = CnbcClient(session=session).fetch("DE10Y-DE", date(2025, 9, 15), date(2026, 10, 12))
+    assert series.tolist() == [3.4857]
+    urls = [c["url"] for c in session.calls]
+    assert len(urls) == 7 and "/20250915000000/20261012235959/" in urls[0]   # 3 tries, 4 pieces
+    assert "/20250915000000/20260112235959/" in urls[3] and urls[-1].count("20261012235959") == 1
+
+
 def test_euro_stoxx_50_is_not_served_by_fmp():
     ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
     assert "fmp" not in ref.get("SX5E").tickers and ref.get("SX5E").tickers["free"].ticker == "^STOXX50E"

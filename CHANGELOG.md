@@ -1,5 +1,13 @@
 # Historique des versions
 
+## 1.5.11
+- Bund bloqué sur la Bundesbank (3,53 au lieu de 3,486) : quand CNBC refusait le chargement de
+  ~15 mois (« 503 Backend fetch failed »), le Bund passait sur la source de secours et le cache
+  l'y gardait. Désormais :
+  - une longue fenêtre refusée par CNBC est redemandée par tranches de 120 jours ;
+  - une série servie par une source de secours est redemandée en entier à la chaîne à chaque
+    rafraîchissement : la source préférée (CNBC) la reprend dès qu'elle répond.
+
 ## 1.5.10
 - `diagnostic-taux` reproduit aussi le chargement de la revue pour le Bund et l'OAT : chaîne
   configurée, fenêtre complète (~15 mois, cache compris), source qui a réellement servi,

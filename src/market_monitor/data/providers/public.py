@@ -23,7 +23,7 @@ import io
 import os
 import re
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -293,7 +293,21 @@ class CnbcClient(_CsvClient):
     max_consecutive_failures = 3       # then the circuit breaker skips CNBC for a while
     _failures = 0
 
+    chunk_days = 120                     # a refused long window is retried in such pieces
+
     def fetch(self, symbol: str, start: date, end: date) -> pd.Series:
+        try:
+            return self._fetch_window(symbol, start, end)
+        except CnbcPayloadError:
+            # CNBC's backend times out on long windows at busy hours ("503 Backend fetch
+            # failed"): the same history asked in shorter pieces usually goes through.
+            if (end - start).days <= self.chunk_days:
+                raise
+        pieces = [self._fetch_window(symbol, a, b) for a, b in _chunks(start, end, self.chunk_days)]
+        merged = pd.concat(pieces).sort_index()
+        return merged[~merged.index.duplicated(keep="last")]
+
+    def _fetch_window(self, symbol: str, start: date, end: date) -> pd.Series:
         url = (f"{self._base_url}/{symbol}/1D/{start:%Y%m%d}000000/{end:%Y%m%d}235959"
                "/adjusted/EST5EDT.json")
         error = DataProviderError(f"CNBC: no answer for {symbol}")
@@ -331,6 +345,16 @@ class CnbcClient(_CsvClient):
         except ValueError as exc:
             raise CnbcPayloadError(f"CNBC returned no JSON for {symbol}: "
                                    f"{str(response.text)[:80]!r}") from exc
+
+
+def _chunks(start: date, end: date, days: int) -> list[tuple[date, date]]:
+    """``[start, end]`` cut into consecutive windows of at most ``days`` days."""
+    out, cursor = [], start
+    while cursor <= end:
+        stop = min(cursor + timedelta(days=days - 1), end)
+        out.append((cursor, stop))
+        cursor = stop + timedelta(days=1)
+    return out
 
 
 class CnbcPayloadError(DataProviderError):

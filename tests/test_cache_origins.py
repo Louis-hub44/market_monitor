@@ -151,3 +151,14 @@ def test_cache_entry_roundtrip_keeps_origin(tmp_path):
     cache.save("free", Field.LAST, CHAIN, entry)
     assert cache.load("free", Field.LAST, CHAIN).origin == "bbk:BUND"
     assert pa  # pyarrow imported for the legacy test
+
+
+def test_fallback_series_is_reasked_in_full_from_the_chain(world):
+    cnbc, bbk, cached, clock = world
+    cnbc.down = True
+    cached.get_history([CHAIN], "2026-06-01", "2026-10-05")
+    cnbc.down, cnbc.calls = False, []
+    _later(clock)
+    result = cached.get_history([CHAIN], "2026-06-01", "2026-10-05")
+    assert cnbc.calls == [("DE10Y-DE", date(2026, 6, 1), date(2026, 10, 5))]  # one full request
+    assert result.origins[CHAIN] == "cnbc:DE10Y-DE" and result.data[CHAIN].iloc[-1] == 2.70
