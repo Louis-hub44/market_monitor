@@ -191,13 +191,13 @@ la section `network` (usage à la maison).
 | `free` | MSCI `msci:CODE[/VARIANTE/DEVISE]` (niveaux de clôture officiels) | `msci:891800` (MSCI EM, prix, USD), `msci:990100/NETR/EUR` |
 | `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER`, `EUR_IG_OAS`, `EUR_IG_YLD` |
 
-Sans Bloomberg, le fallback gratuit couvre les courbes Bund (courbe officielle de la
-Bundesbank, publiée en fin de journée, puis CNBC et Stooq), OAT / BTP / Bonos (CNBC puis
+Sans Bloomberg, le fallback gratuit couvre les courbes Bund (CNBC, mêmes clôtures
+qu'Investing, puis courbe officielle de la Bundesbank et Stooq), OAT / BTP / Bonos (CNBC puis
 Stooq), l'UST 2 ans (FRED), le VSTOXX
 (STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Un ticker peut être une
 **chaîne de secours** `a|b` : la première source qui répond l'emporte, un repli est signalé en
-avertissement et en « source de secours » dans les points à vérifier (Bund : Bundesbank, puis
-CNBC, puis Stooq ; OAT / BTP / Bonos : CNBC puis Stooq ; UST : CNBC, puis FRED et le future Micro 2Y
+avertissement et en « source de secours » dans les points à vérifier (Bund : CNBC, puis
+Bundesbank, puis Stooq ; OAT / BTP / Bonos : CNBC puis Stooq ; UST : CNBC, puis FRED et le future Micro 2Y
 `2YY=F` pour le 2 ans, les indices CBOE `^FVX` / `^TNX` / `^TYX` pour les autres). Toute la
 courbe US vient ainsi d'une seule source à la même date : avec FRED (publié à J-1) et Yahoo,
 la pente 2s10s affichait la veille sans être marquée. Stooq sert parfois une page anti-robot : elle

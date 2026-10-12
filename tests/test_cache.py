@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 
+import pandas as pd
 import pytest
 
 from market_monitor.data.cache import CacheEntry, ParquetCache, safe_name
@@ -55,3 +56,26 @@ def test_entry_validation():
     with pytest.raises(ValueError):
         CacheEntry(bday_series("2026-01-01", "2026-01-02"), date(2026, 2, 1), date(2026, 1, 1),
                    datetime(2026, 2, 1, tzinfo=UTC))
+
+
+def test_cnbc_series_cached_before_the_date_fix_are_reloaded(tmp_path):
+    import json
+
+    import pyarrow.parquet as pq
+
+    from market_monitor.data import cache as cache_module
+
+    cache = ParquetCache(tmp_path)
+    entry = CacheEntry(series=pd.Series([3.48], index=pd.to_datetime(["2026-10-09"])),
+                       covered_start=date(2026, 10, 1), covered_end=date(2026, 10, 9),
+                       fetched_at=datetime(2026, 10, 9, 18, 0, tzinfo=UTC))
+    for ticker in ("cnbc:DE10Y-DE|stooq:10dey.b", "^GSPC"):
+        assert cache.save("free", Field.LAST, ticker, entry)
+        path = cache.path_for("free", Field.LAST, ticker)
+        table = pq.read_table(path)
+        meta = json.loads(table.schema.metadata[cache_module._META_KEY])
+        meta["version"] = 2  # written by v1.5.8
+        pq.write_table(table.replace_schema_metadata(
+            {**table.schema.metadata, cache_module._META_KEY: json.dumps(meta)}), path)
+    assert cache.load("free", Field.LAST, "cnbc:DE10Y-DE|stooq:10dey.b") is None
+    assert cache.load("free", Field.LAST, "^GSPC") is not None

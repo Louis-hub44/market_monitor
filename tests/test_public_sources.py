@@ -121,16 +121,16 @@ def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
     for country in ("BUND", "OAT", "BTP", "BONOS"):
         for tenor in ("2Y", "5Y", "10Y", "30Y"):
             chain = ref.get(f"{country}_{tenor}").tickers["free"].ticker.split("|")
-            if country == "BUND":  # official Bundesbank curve first, then the generics
-                assert chain[0].startswith("bbk:BBSIS/") and chain[1] == f"cnbc:DE{tenor}-DE"
+            assert chain[0].startswith("cnbc:")  # CNBC matches the Investing closes
+            if country == "BUND":  # then the official Bundesbank curve
+                assert chain[1].startswith("bbk:BBSIS/") and chain[2].startswith("stooq:")
             else:
-                assert chain[0].startswith("cnbc:") and chain[1].startswith("stooq:")
+                assert chain[1].startswith("stooq:")
     # the whole US curve comes from CNBC first (one source, one date), then the former sources
     assert ref.get("UST_2Y").tickers["free"].ticker == "cnbc:US2Y|fred:DGS2|2YY=F"
     for tenor, fallback in (("5Y", "^FVX"), ("10Y", "^TNX"), ("30Y", "^TYX")):
         assert ref.get(f"UST_{tenor}").tickers["free"].ticker == f"cnbc:US{tenor}|{fallback}"
-    assert ref.get("BUND_10Y").tickers["free"].ticker.startswith(
-        "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX")
+    assert "|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX" in ref.get("BUND_10Y").tickers["free"].ticker
     assert ref.get("V2X").tickers["free"].ticker == "stoxx:v2tx"
     assert ref.get("SX86P").tickers["free"].proxy
 
@@ -375,3 +375,25 @@ def test_cli_diagnostic_with_ssl_bypass(monkeypatch, capsys):
     assert cli.main(["--config", str(REPO_CONFIG), "diagnostic-taux", "--contourner-ssl"]) == 0
     out = capsys.readouterr().out
     assert seen["verify"] is False and "désactivée" in out and "== ok" in out
+
+
+
+def test_cnbc_weekend_stamp_is_mondays_session():
+    """Diagnostic of 12/10/2026: bars 20261009 (Fri close) and 20261010 (Mon live, stamped Sat)."""
+    from market_monitor.data.providers.public import parse_cnbc_bars
+
+    payload = {"barData": {"priceBars": [
+        {"tradeTime": "20261002000000", "close": "3.4549"},
+        {"tradeTime": "20261003000000", "close": "3.4553"},   # Monday 5 October
+        {"tradeTime": "20261008000000", "close": "3.4939"},
+        {"tradeTime": "20261009000000", "close": "3.4857"},   # Friday close = Investing 3,486
+        {"tradeTime": "20261010000000", "close": "3.4654"},   # Monday 12 October, live
+    ]}}
+    series = parse_cnbc_bars(payload, "DE10Y-DE")
+    assert series.index.strftime("%a %d/%m").tolist() == [
+        "Fri 02/10", "Mon 05/10", "Thu 08/10", "Fri 09/10", "Mon 12/10"]
+    assert series[pd.Timestamp("2026-10-09")] == 3.4857
+    # a real Monday stamp next to a Saturday one: the real one wins
+    both = {"barData": {"priceBars": [{"tradeTime": "20261010000000", "close": "1"},
+                                      {"tradeTime": "20261012000000", "close": "2"}]}}
+    assert parse_cnbc_bars(both).tolist() == [2.0]

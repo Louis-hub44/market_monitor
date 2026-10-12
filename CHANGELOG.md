@@ -1,5 +1,14 @@
 # Historique des versions
 
+## 1.5.9 — dates CNBC corrigées, Bund aligné sur Investing
+- **Correctif** : CNBC date la séance du lundi au samedi précédent (barres « 03/10 » et
+  « 10/10 » = lundis 5 et 12/10/2026). Le cours en séance du lundi passait donc pour la
+  dernière clôture, malgré le filtre « clôtures uniquement » (OAT 4,846 %, Bund en séance).
+  Une barre datée du week-end est désormais rattachée au lundi suivant ; les séries CNBC déjà
+  en cache sont rechargées une fois.
+- Bund : CNBC de nouveau en tête (clôture identique à Investing : 3,4857 % le 09/10/2026),
+  Bundesbank en secours (maturité constante 10 ans, ~4 pb au-dessus, 2 décimales).
+
 ## 1.5.8
 - `diagnostic-taux --contourner-ssl` : même test derrière le proxy d'inspection SSL (la
   commande ne passe pas par l'écran de connexion du dashboard).

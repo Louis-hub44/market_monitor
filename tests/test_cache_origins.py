@@ -123,7 +123,7 @@ def test_legacy_chain_cache_is_rebuilt_once(world, tmp_path):
     meta.update(version=1)
     meta.pop("origin")
     pq.write_table(table.replace_schema_metadata({b"market_monitor": json.dumps(meta).encode()}), path)
-    assert cache.load("free", Field.LAST, CHAIN).origin is None
+    assert cache.load("free", Field.LAST, CHAIN) is None  # CNBC series cached before v3: reloaded
     _later(clock)
     result = cached.get_history([CHAIN], "2026-06-01", "2026-10-05")
     assert result.data[CHAIN].nunique() == 1 and result.origins[CHAIN] == "cnbc:DE10Y-DE"

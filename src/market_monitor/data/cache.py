@@ -28,8 +28,10 @@ from market_monitor.data.quality import clean_series
 logger = logging.getLogger(__name__)
 
 _META_KEY = b"market_monitor"
-_SCHEMA_VERSION = 2
-_READABLE_VERSIONS = {1, 2}  # v1 files carry no origin
+_SCHEMA_VERSION = 3
+_READABLE_VERSIONS = {1, 2, 3}  # v1 files carry no origin
+#: series written before a parser fix are reloaded once: (ticker fragment, first good version)
+_STALE_PARSERS = (("cnbc:", 3),)  # v3: CNBC's Saturday stamp is Monday's session
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -88,6 +90,9 @@ class ParquetCache:
             meta = json.loads((table.schema.metadata or {})[_META_KEY])
             if meta.get("version") not in _READABLE_VERSIONS or meta.get("ticker") != ticker:
                 logger.warning("Ignoring cache file with unexpected metadata: %s", path)
+                return None
+            if any(part in ticker and meta["version"] < good for part, good in _STALE_PARSERS):
+                logger.info("Reloading %s: cached before a fix of its source's parser", ticker)
                 return None
             frame = table.to_pandas()
             return CacheEntry(

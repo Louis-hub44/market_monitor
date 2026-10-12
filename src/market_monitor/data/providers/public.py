@@ -357,13 +357,24 @@ def parse_cnbc_bars(payload: Any, symbol: str = "") -> pd.Series:
 
 
 def _cnbc_day(bar: dict[str, Any]) -> pd.Timestamp | None:
+    """Trading day of a CNBC daily bar.
+
+    CNBC stamps Monday's session with the previous Saturday (bars "20261003" and "20261010"
+    held the sessions of Monday 5 and 12 October 2026; weekday bars match their own day,
+    e.g. Friday 9 October: Bund 3,4857 %, as on Investing). A weekend stamp is therefore
+    moved to the following Monday - otherwise Monday's live quote passes for the latest close.
+    """
     stamp = str(bar.get("tradeTime") or "")
     if len(stamp) >= 8 and stamp[:8].isdigit():
-        return pd.Timestamp(f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}")
-    try:
-        return pd.Timestamp(int(float(bar.get("tradeTimeinMills") or "")), unit="ms")
-    except (TypeError, ValueError):
-        return None  # NaT once in the index: dropped by clean_series
+        day = pd.Timestamp(f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}")
+    else:
+        try:
+            day = pd.Timestamp(int(float(bar.get("tradeTimeinMills") or "")), unit="ms")
+        except (TypeError, ValueError):
+            return None  # NaT once in the index: dropped by clean_series
+    if day.weekday() >= 5:  # Saturday / Sunday stamp: Monday's session
+        day += pd.Timedelta(days=7 - day.weekday())
+    return day
 
 
 # ----------------------------------------------------------------------- MSCI
