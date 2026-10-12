@@ -14,6 +14,7 @@ from functools import partial
 import pandas as pd
 import requests
 
+from market_monitor.analytics.performance import required_start
 from market_monitor.data.providers.free import DEFAULT_ECB_URL, ECBClient
 from market_monitor.data.providers.public import (
     BUNDESBANK_URL,
@@ -23,6 +24,7 @@ from market_monitor.data.providers.public import (
     CnbcClient,
 )
 from market_monitor.exceptions import MarketMonitorError
+from market_monitor.monitor import MarketMonitor
 
 BUND_10Y_KEY = "D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"
 #: ECB "FM" keys have 7 dimensions: FREQ.REF_AREA.CURRENCY.PROVIDER.INSTRUMENT.PROVIDER_ID.DATA_TYPE
@@ -82,3 +84,44 @@ def _parsed(fetch: Callable[[], pd.Series]) -> list[str]:
     if series.empty:
         return ["   lu : aucune donnée"]
     return [f"   lu : {d:%d/%m} = {v}" for d, v in series.tail(3).items()]
+
+
+REVIEW_IDS = ("BUND_10Y", "OAT_10Y")
+LONG_WINDOW_DAYS = 460  # the review loads ~15 months (YTD reference + z-score window)
+
+
+def review_report(monitor: MarketMonitor, today: date,
+                  session: requests.Session | None = None) -> list[str]:
+    """What the morning review really loads for the Bund and the OAT.
+
+    Configured chain, then the same history call as the review (cache included, ~15 months):
+    serving source, fallback warnings, errors and last closes - plus a long raw CNBC request,
+    to tell a refused long window from a transient refusal.
+    """
+    ref = monitor.referential
+    lines = ["== Revue : chaînes configurées"]
+    for instrument_id in REVIEW_IDS:
+        spec = ref.get(instrument_id).tickers.get("free")
+        lines.append(f"   {instrument_id} : {spec.ticker if spec else '(pas de ticker gratuit)'}")
+    start = required_start(today, monitor.analytics)
+    lines.append(f"== Revue : chargement du {start:%d/%m/%Y} au {today:%d/%m/%Y} (cache compris)")
+    try:
+        hist = monitor.history(list(REVIEW_IDS), start, today)
+    except MarketMonitorError as exc:
+        return [*lines, f"   erreur : {exc}"]
+    for instrument_id in REVIEW_IDS:
+        column = hist.levels[instrument_id].dropna() if instrument_id in hist.levels else pd.Series()
+        last = ", ".join(f"{d:%d/%m} = {v:.4f}" for d, v in column.tail(3).items()) or "aucune"
+        lines.append(f"   {instrument_id} : servi par {hist.origins.get(instrument_id, '?')} "
+                     f"({hist.sources.get(instrument_id, '?')}) ; dernières valeurs : {last}")
+        for label, messages in (("avertissement", hist.warnings), ("erreur", hist.errors)):
+            if instrument_id in messages:
+                lines.append(f"      {label} : {messages[instrument_id]}")
+        for note in hist.notes.get(instrument_id, []):
+            lines.append(f"      à vérifier : {note}")
+    long_start = today - timedelta(days=LONG_WINDOW_DAYS)
+    url = (f"{CNBC_URL}/DE10Y-DE/1D/{long_start:%Y%m%d}000000/{today:%Y%m%d}235959"
+           "/adjusted/EST5EDT.json")
+    lines += _raw(f"CNBC, DE10Y-DE sur {LONG_WINDOW_DAYS} jours (fenêtre de la revue)",
+                  session or requests.Session(), url, None, None)
+    return lines

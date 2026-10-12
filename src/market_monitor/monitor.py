@@ -119,6 +119,11 @@ class MarketMonitor:
         return tuple(i for i in pool if i in self._referential
                      and MANUAL_PROVIDER in self._referential.get(i).tickers)
 
+    @property
+    def analytics(self) -> AnalyticsSettings:
+        """Performance-engine settings (z-score window... - sets how much history is loaded)."""
+        return self._engine.settings
+
     def today(self) -> date:
         """Current date in the market time zone."""
         return self.now().date()

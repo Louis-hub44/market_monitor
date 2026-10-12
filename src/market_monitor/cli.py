@@ -45,7 +45,7 @@ from market_monitor.data.factory import build_provider, rest_session, with_cache
 from market_monitor.data.models import to_date
 from market_monitor.data.providers.free import ECBClient
 from market_monitor.data.providers.manual import previous_business_day
-from market_monitor.diagnostics import rate_sources_report
+from market_monitor.diagnostics import rate_sources_report, review_report
 from market_monitor.doctor import run_checks
 from market_monitor.exceptions import InvalidRequestError, MarketMonitorError
 from market_monitor.export import export_daily_macro, load_layout
@@ -208,7 +208,10 @@ def _diagnostic_taux(settings: Settings, args: argparse.Namespace) -> int:
     if args.contourner_ssl:
         settings = replace(settings, network=NetworkSettings(insecure_ssl=True))
     print(f"Connexion : {describe(settings.network.insecure_ssl, settings.network.ca_bundle)}")
-    for line in rate_sources_report(rest_session(settings), date.today(), settings.free.ecb_base_url):
+    session = rest_session(settings)
+    for line in rate_sources_report(session, date.today(), settings.free.ecb_base_url):
+        print(line)
+    for line in review_report(MarketMonitor.from_settings(settings), date.today(), session):
         print(line)
     return EXIT_OK
 

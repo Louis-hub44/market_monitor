@@ -397,3 +397,21 @@ def test_cnbc_weekend_stamp_is_mondays_session():
     both = {"barData": {"priceBars": [{"tradeTime": "20261010000000", "close": "1"},
                                       {"tradeTime": "20261012000000", "close": "2"}]}}
     assert parse_cnbc_bars(both).tolist() == [2.0]
+
+
+def test_review_report_reproduces_the_review_load():
+    from market_monitor.data.service import MarketDataService
+    from market_monitor.diagnostics import review_report
+    from market_monitor.monitor import MarketMonitor
+    from tests.conftest import FakeProvider, bday_series
+
+    ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
+    bund = ref.get("BUND_10Y").tickers["free"].ticker
+    free = FakeProvider("free", {bund: bday_series("2025-06-01", "2026-10-09", 3.0)})
+    monitor = MarketMonitor(MarketDataService([free]), ref)
+    session = FakeSession([FakeResponse(200, text='{"status": 400, "statusMessage": "range too long"}')])
+    text = "\n".join(review_report(monitor, date(2026, 10, 12), session))
+    assert f"BUND_10Y : {bund}" in text and "OAT_10Y : cnbc:FR10Y-FR" in text
+    assert "BUND_10Y : servi par" in text and "dernières valeurs : " in text
+    assert "OAT_10Y" in text and "erreur" in text                # nothing serves the OAT here
+    assert "sur 460 jours" in text and "range too long" in text

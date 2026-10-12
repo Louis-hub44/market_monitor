@@ -1,5 +1,10 @@
 # Historique des versions
 
+## 1.5.10
+- `diagnostic-taux` reproduit aussi le chargement de la revue pour le Bund et l'OAT : chaîne
+  configurée, fenêtre complète (~15 mois, cache compris), source qui a réellement servi,
+  avertissements de secours et erreurs ; et une requête CNBC brute sur la même fenêtre.
+
 ## 1.5.9 — dates CNBC corrigées, Bund aligné sur Investing
 - **Correctif** : CNBC date la séance du lundi au samedi précédent (barres « 03/10 » et
   « 10/10 » = lundis 5 et 12/10/2026). Le cours en séance du lundi passait donc pour la
