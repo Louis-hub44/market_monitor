@@ -191,13 +191,13 @@ la section `network` (usage à la maison).
 | `free` | MSCI `msci:CODE[/VARIANTE/DEVISE]` (niveaux de clôture officiels) | `msci:891800` (MSCI EM, prix, USD), `msci:990100/NETR/EUR` |
 | `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER`, `EUR_IG_OAS`, `EUR_IG_YLD` |
 
-Sans Bloomberg, le fallback gratuit couvre les courbes Bund / OAT / BTP / Bonos (Stooq, une
-seule source pour que les spreads restent cohérents ; la courbe Bundesbank est indiquée en
-commentaire dans `instruments.yaml` en secours pour le Bund), l'UST 2 ans (FRED), le VSTOXX
+Sans Bloomberg, le fallback gratuit couvre les courbes Bund (courbe officielle de la
+Bundesbank, publiée en fin de journée, puis CNBC et Stooq), OAT / BTP / Bonos (CNBC puis
+Stooq), l'UST 2 ans (FRED), le VSTOXX
 (STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Un ticker peut être une
 **chaîne de secours** `a|b` : la première source qui répond l'emporte, un repli est signalé en
-avertissement et en « source de secours » dans les points à vérifier (taux souverains : CNBC,
-puis Stooq, puis — Bund seulement — Bundesbank ; UST : CNBC, puis FRED et le future Micro 2Y
+avertissement et en « source de secours » dans les points à vérifier (Bund : Bundesbank, puis
+CNBC, puis Stooq ; OAT / BTP / Bonos : CNBC puis Stooq ; UST : CNBC, puis FRED et le future Micro 2Y
 `2YY=F` pour le 2 ans, les indices CBOE `^FVX` / `^TNX` / `^TYX` pour les autres). Toute la
 courbe US vient ainsi d'une seule source à la même date : avec FRED (publié à J-1) et Yahoo,
 la pente 2s10s affichait la veille sans être marquée. Stooq sert parfois une page anti-robot : elle
@@ -607,7 +607,9 @@ exactement les séries du bandeau (seul l'historique plus ancien d'une fenêtre 
 instrument hors bandeau, est chargé à part) : un graphique et sa ligne affichent toujours le
 même dernier cours. Quand la revue est datée du jour, un cours du jour dont la séance n'est
 pas close à l'heure du calcul (section `closing_prices` de `daily_macro.yaml`, heures de
-Paris par classe, groupe ou instrument) est ignoré : à 9 h, l'Euro Stoxx 50, le Bund et
+Paris par classe, groupe ou instrument) est ignoré ; une ligne publiée restée sur une
+clôture plus ancienne que celle attendue (source qui publie tard, comme la Bundesbank tôt le
+matin, ou jour férié local) est listée dans « À vérifier avant diffusion ». Exemple : à 9 h, l'Euro Stoxx 50, le Bund et
 l'OAT montrent la clôture de la veille, le Nikkei celle du jour. La vue *Daily macro*
 indique les lignes concernées. Le reste du dashboard continue d'afficher les cours en séance.
 

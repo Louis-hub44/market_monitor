@@ -1,5 +1,12 @@
 # Historique des versions
 
+## 1.5.6 — Bund sur la courbe officielle de la Bundesbank
+- Bund 2, 5, 10 et 30 ans : courbe officielle de la Bundesbank en premier (publiée en fin de
+  journée ; quelques pb d'écart possibles avec le générique d'Investing), puis CNBC et Stooq.
+  Les spreads OAT-Bund et BTP-Bund mêlent donc deux sources (CNBC pour l'OAT et le BTP).
+- Une ligne publiée restée une séance en retard sur la clôture attendue (source qui publie
+  tard, jour férié local) est listée dans « À vérifier avant diffusion ».
+
 ## 1.5.5 — Euro Stoxx 50 officiel, CNBC plus robuste
 - **Euro Stoxx 50 : clôture officielle.** FMP n'est plus utilisé pour cet indice : STOXX le
   calcule jusqu'à 22 h et FMP retenait la valeur de fin de soirée (6 197,10 au lieu de

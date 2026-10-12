@@ -120,12 +120,16 @@ def test_repository_maps_former_bloomberg_only_rates_to_free_sources():
     for country in ("BUND", "OAT", "BTP", "BONOS"):
         for tenor in ("2Y", "5Y", "10Y", "30Y"):
             chain = ref.get(f"{country}_{tenor}").tickers["free"].ticker.split("|")
-            assert chain[0].startswith("cnbc:") and chain[1].startswith("stooq:")
+            if country == "BUND":  # official Bundesbank curve first, then the generics
+                assert chain[0].startswith("bbk:BBSIS/") and chain[1] == f"cnbc:DE{tenor}-DE"
+            else:
+                assert chain[0].startswith("cnbc:") and chain[1].startswith("stooq:")
     # the whole US curve comes from CNBC first (one source, one date), then the former sources
     assert ref.get("UST_2Y").tickers["free"].ticker == "cnbc:US2Y|fred:DGS2|2YY=F"
     for tenor, fallback in (("5Y", "^FVX"), ("10Y", "^TNX"), ("30Y", "^TYX")):
         assert ref.get(f"UST_{tenor}").tickers["free"].ticker == f"cnbc:US{tenor}|{fallback}"
-    assert "|bbk:BBSIS/" in ref.get("BUND_10Y").tickers["free"].ticker
+    assert ref.get("BUND_10Y").tickers["free"].ticker.startswith(
+        "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX")
     assert ref.get("V2X").tickers["free"].ticker == "stoxx:v2tx"
     assert ref.get("SX86P").tickers["free"].proxy
 

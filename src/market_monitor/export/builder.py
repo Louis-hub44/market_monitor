@@ -86,11 +86,35 @@ def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
         alerts=evaluate(rules, table, report.as_of) if rules else None,
         errors=dict(report.errors),
         warnings=dict(report.warnings),
-        checks=report.checks(),
+        checks=_lagging(report.checks(), table, layout.section_ids, day, provisional),
         style=layout.style,
         levels=report.levels,
         provisional=frozenset(provisional),
     )
+
+
+def _lagging(checks: dict[str, list[str]], table: pd.DataFrame, ids: Sequence[str], day: date,
+             provisional: set[str]) -> dict[str, list[str]]:
+    """Add a point to check for a published line one session behind the expected close.
+
+    Expected: the review day's close, or the previous business day's while today's session
+    is open. A source publishing late (Bundesbank curve in the early morning) or a local
+    holiday leaves the line on an older close: shown before publication, not hidden.
+    """
+    out = {k: list(v) for k, v in checks.items()}
+    dates = pd.to_datetime(table["level_date"])
+    for instrument_id in ids:
+        if instrument_id not in table.index or bool(table.at[instrument_id, "stale"]):
+            continue  # missing or stale lines are already listed
+        last = dates[instrument_id]
+        expected = pd.Timestamp(day)
+        if instrument_id in provisional:  # session still open: yesterday's close is expected
+            expected -= pd.offsets.BDay()
+        if pd.notna(last) and last < expected:
+            out.setdefault(instrument_id, []).append(
+                f"dernière clôture du {last:%d/%m}, attendue au {expected:%d/%m} "
+                "(source en retard ou jour férié)")
+    return out
 
 
 def _band(table: pd.DataFrame, section: Section, layout: DailyMacroLayout) -> pd.DataFrame:

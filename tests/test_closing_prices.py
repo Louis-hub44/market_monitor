@@ -118,3 +118,13 @@ def test_repository_layout_enables_closes_only():
 
     layout = load_layout(CONFIG_DIR / "daily_macro.yaml", REF)
     assert layout.closing.enabled and layout.closing.close_time(REF.get("OAT_10Y")) == time(18, 0)
+
+
+def test_line_one_session_behind_is_listed_before_publication(world):
+    monitor, data, layout = world
+    data["BUND_10Y"] = data["BUND_10Y"].loc[:"2026-10-08"]   # Bundesbank: Friday not published yet
+    data["NKY"] = data["NKY"].loc[:"2026-10-09"]             # Tokyo closed on Monday (holiday)
+    review = build_daily_macro(monitor, layout, MONDAY, now=_at(9, 0))
+    assert any("dernière clôture du 08/10, attendue au 09/10" in c for c in review.checks["BUND_10Y"])
+    assert any("attendue au 12/10" in c for c in review.checks["NKY"])
+    assert not any("attendue" in c for c in review.checks.get("SX5E", []))  # Friday close: on time

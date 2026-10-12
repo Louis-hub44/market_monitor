@@ -105,18 +105,19 @@ instruments:
   # -------------------------------------------------------------------- taux
   # Génériques Bloomberg (rendements en %). Fallback gratuit en chaîne "a|b|c" (la première
   # source qui répond l'emporte, un repli est signalé en avertissement) :
-  #   1. CNBC (cnbc:<PAYS><n>Y-<PAYS>, en %) - même source pour les quatre pays, spreads cohérents ;
-  #   2. Stooq (stooq:<n><pays>y.b) - souvent derrière une page anti-robot ;
-  #   3. Bund uniquement : courbe officielle de la Bundesbank (zéro-coupon Svensson, quelques
-  #      pb d'écart avec le générique : les spreads contre OAT / BTP en sont légèrement biaisés).
+  #   Bund : 1. courbe officielle de la Bundesbank (bbk:, zéro-coupon Svensson publié en fin de
+  #          journée ; quelques pb d'écart possibles avec le générique d'Investing / CNBC, d'où un
+  #          léger biais des spreads OAT-Bund et BTP-Bund), 2. CNBC, 3. Stooq ;
+  #   OAT / BTP / Bonos : 1. CNBC (cnbc:<PAYS><n>Y-<PAYS>, en %), 2. Stooq (stooq:<n><pays>y.b,
+  #          souvent derrière une page anti-robot).
   BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR2 Index, free: "cnbc:DE2Y-DE|stooq:2dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR2 Index, free: "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A|cnbc:DE2Y-DE|stooq:2dey.b"}}
   BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR5 Index, free: "cnbc:DE5Y-DE|stooq:5dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R05XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR5 Index, free: "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R05XX.R.A.A._Z._Z.A|cnbc:DE5Y-DE|stooq:5dey.b"}}
   BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR10 Index, free: "cnbc:DE10Y-DE|stooq:10dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR10 Index, free: "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A|cnbc:DE10Y-DE|stooq:10dey.b"}}
   BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne,
-              tickers: {bloomberg: GDBR30 Index, free: "cnbc:DE30Y-DE|stooq:30dey.b|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R30XX.R.A.A._Z._Z.A"}}
+              tickers: {bloomberg: GDBR30 Index, free: "bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R30XX.R.A.A._Z._Z.A|cnbc:DE30Y-DE|stooq:30dey.b"}}
   OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France,
               tickers: {bloomberg: GFRN2 Index, free: "cnbc:FR2Y-FR|stooq:2fry.b"}}
   OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France,
