@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from datetime import date
 from typing import Any
 
@@ -240,34 +241,73 @@ def parse_stoxx_txt(text: str, symbol: str = "") -> pd.Series:
 
 # ----------------------------------------------------------------------- CNBC
 class CnbcClient(_CsvClient):
-    """CNBC chart service, daily bars (JSON) - unofficial, used as a fallback only."""
+    """CNBC chart service, daily bars (JSON) - unofficial.
+
+    CNBC answers bursts of requests with an empty or truncated payload for some symbols
+    (the same request succeeds a moment later): calls are spaced out and such an answer is
+    retried after a pause before the symbol is reported as failed.
+    """
 
     source = "CNBC"
     default_url = CNBC_URL
+    min_interval_s = 0.3                 # between two calls
+    retry_pauses_s = (1.5, 4.0)          # before each retry of an unusable payload
+    _sleep = staticmethod(time.sleep)
+    _clock = staticmethod(time.monotonic)
+    _last_call = 0.0
+    max_consecutive_failures = 3       # then the circuit breaker skips CNBC for a while
+    _failures = 0
 
     def fetch(self, symbol: str, start: date, end: date) -> pd.Series:
         url = (f"{self._base_url}/{symbol}/1D/{start:%Y%m%d}000000/{end:%Y%m%d}235959"
                "/adjusted/EST5EDT.json")
+        error = DataProviderError(f"CNBC: no answer for {symbol}")
+        for pause in (0.0, *self.retry_pauses_s):
+            if pause:
+                self._sleep(pause)
+            try:
+                series = _window(parse_cnbc_bars(self._payload(url, symbol), symbol), start, end)
+            except CnbcPayloadError as exc:  # transient refusal: try again
+                error = exc
+                continue
+            self._failures = 0
+            return series
+        self._failures += 1
+        if self._failures >= self.max_consecutive_failures:  # CNBC refuses everything: stop
+            self._failures = 0
+            raise ProviderUnavailableError(f"CNBC unreachable ({error})")
+        raise error
+
+    def _payload(self, url: str, symbol: str) -> Any:
+        wait = self.min_interval_s - (self._clock() - CnbcClient._last_call)
+        if wait > 0:
+            self._sleep(wait)
+        CnbcClient._last_call = self._clock()
         response = get_with_retry(
             self._session, url, params=None, timeout_s=self._timeout_s,
             max_retries=self._max_retries, backoff_s=1.0, source=self.source,
         )
         if response.status_code == 404:
-            return clean_series(None)
+            return {"barData": {"priceBars": []}}
         if response.status_code >= 400:
             raise DataProviderError(f"CNBC HTTP {response.status_code} for {symbol}")
         try:
-            payload = response.json()
+            return response.json()
         except ValueError as exc:
-            raise DataProviderError(f"CNBC returned no JSON for {symbol}") from exc
-        return _window(parse_cnbc_bars(payload, symbol), start, end)
+            raise CnbcPayloadError(f"CNBC returned no JSON for {symbol}: "
+                                   f"{str(response.text)[:80]!r}") from exc
+
+
+class CnbcPayloadError(DataProviderError):
+    """CNBC answered, but not with bars (usually a transient refusal)."""
 
 
 def parse_cnbc_bars(payload: Any, symbol: str = "") -> pd.Series:
     """``barData.priceBars[]`` -> close by date (``tradeTime`` ``YYYYMMDDhhmmss`` or epoch ms)."""
     bar_data = payload.get("barData") if isinstance(payload, dict) else None
     if not isinstance(bar_data, dict):
-        raise DataProviderError(f"unexpected CNBC payload for {symbol}")
+        shown = sorted(payload)[:5] if isinstance(payload, dict) else type(payload).__name__
+        raise CnbcPayloadError(f"unexpected CNBC payload for {symbol} (received: {shown})")
     bars = bar_data.get("priceBars") or []
     dates, closes = [], []
     for bar in bars:

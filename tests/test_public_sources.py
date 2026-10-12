@@ -286,3 +286,31 @@ def test_repository_msci_em_is_official_then_future_proxy():
     assert spec.ticker.startswith("msci:891800|")
     assert spec.proxy_for("msci:891800") is None
     assert "MSCI EM" in (spec.proxy_for("MME=F") or "")
+
+
+# ------------------------------------------------------------- CNBC refusals
+def test_cnbc_retries_a_transient_refusal():
+    from market_monitor.data.providers.public import CnbcClient
+
+    session = FakeSession([FakeResponse(200, payload={"error": "busy"}), FakeResponse(200, payload=CNBC)])
+    series = CnbcClient(session=session).fetch("FR10Y-FR", START, END)
+    assert series.tolist() == [3.10, 3.08] and len(session.calls) == 2
+
+
+def test_cnbc_reports_what_it_received_then_gives_up():
+    from market_monitor.data.providers.public import CnbcClient
+    from market_monitor.exceptions import ProviderUnavailableError
+
+    client = CnbcClient(session=FakeSession([FakeResponse(200, payload={"error": "busy"})]))
+    for symbol in ("FR5Y-FR", "IT2Y-IT"):
+        with pytest.raises(DataProviderError, match=r"received: \['error'\]"):
+            client.fetch(symbol, START, END)
+    with pytest.raises(ProviderUnavailableError):  # third symbol in a row: CNBC set aside
+        client.fetch("ES2Y-ES", START, END)
+    assert len(client._session.calls) == 9  # 3 symbols x (1 call + 2 retries)
+
+
+def test_euro_stoxx_50_is_not_served_by_fmp():
+    ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
+    assert "fmp" not in ref.get("SX5E").tickers and ref.get("SX5E").tickers["free"].ticker == "^STOXX50E"
+    assert "fmp" in ref.get("CAC").tickers  # CAC 40: FMP close matches the official one

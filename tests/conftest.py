@@ -86,3 +86,12 @@ class FakeSession:
 def clock() -> MutableClock:
     # 08:00 UTC = 10:00 Paris, Monday 5 October 2026
     return MutableClock(datetime(2026, 10, 5, 8, 0, tzinfo=UTC))
+
+
+@pytest.fixture(autouse=True)
+def _no_cnbc_pauses(monkeypatch):
+    """CNBC retries pause for real between attempts: instant in tests."""
+    from market_monitor.data.providers.public import CnbcClient
+
+    monkeypatch.setattr(CnbcClient, "_sleep", staticmethod(lambda _s: None))
+    monkeypatch.setattr(CnbcClient, "_failures", 0)

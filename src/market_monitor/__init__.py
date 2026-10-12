@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.5.4"
+__version__ = "1.5.5"
 __all__ = ["MarketMonitor", "load_settings", "__version__"]
 
 

@@ -1,5 +1,14 @@
 # Historique des versions
 
+## 1.5.5 — Euro Stoxx 50 officiel, CNBC plus robuste
+- **Euro Stoxx 50 : clôture officielle.** FMP n'est plus utilisé pour cet indice : STOXX le
+  calcule jusqu'à 22 h et FMP retenait la valeur de fin de soirée (6 197,10 au lieu de
+  6 173,37 le 09/10/2026). Yahoo sert la clôture officielle.
+- **CNBC** : appels espacés et nouvel essai après une pause quand CNBC renvoie une réponse
+  vide (refus passager qui faisait perdre des échéances OAT / BTP / Bonos) ; après trois
+  symboles refusés d'affilée, CNBC est mis de côté par le coupe-circuit ; le message d'erreur
+  indique ce que CNBC a renvoyé.
+
 ## 1.5.4 — revue du matin : clôtures et chiffres cohérents
 - **Correctif** : les graphiques de la daily macro réutilisent les séries du bandeau au lieu
   de les relire. Avant, une seconde lecture (autre fenêtre, autre moment, autre alternative de

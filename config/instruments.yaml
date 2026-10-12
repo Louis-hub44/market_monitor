@@ -32,8 +32,10 @@ defaults:
 
 instruments:
   # ------------------------------------------------------------------ actions
+  # Pas de FMP pour l'Euro Stoxx 50 : STOXX calcule l'indice jusqu'à 22 h et FMP retient la
+  # valeur de fin de soirée (6 197,10 au lieu de la clôture officielle 6 173,37 le 09/10/2026).
   SX5E:    {name: Euro Stoxx 50, class: equity, group: Europe,
-            tickers: {bloomberg: SX5E Index, fmp: ^STOXX50E, free: ^STOXX50E}}
+            tickers: {bloomberg: SX5E Index, free: ^STOXX50E}}
   SXXP:    {name: Stoxx Europe 600, class: equity, group: Europe,
             tickers: {bloomberg: SXXP Index, free: ^STOXX}}
   CAC:     {name: CAC 40, class: equity, group: Europe,
