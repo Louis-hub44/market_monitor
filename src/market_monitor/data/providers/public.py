@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import time
 from datetime import date
 from typing import Any
@@ -131,16 +132,50 @@ class BundesbankClient(_CsvClient):
 
 
 def parse_sdmx_csv(text: str, source: str = "SDMX") -> pd.Series:
-    """``TIME_PERIOD`` -> ``OBS_VALUE`` of an SDMX-CSV payload (comma or semicolon)."""
+    """``TIME_PERIOD`` -> ``OBS_VALUE`` of an SDMX-CSV payload (comma or semicolon).
+
+    A server that ignores the CSV request and answers SDMX-ML (XML) is read too.
+    """
     if not text.strip():
         return clean_series(None)
+    if text.lstrip().startswith("<"):
+        return parse_sdmx_xml(text, source)
     try:
         frame = pd.read_csv(io.StringIO(text), sep=None, engine="python")
     except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         raise DataProviderError(f"unparseable {source} CSV: {exc}") from exc
     if not {"TIME_PERIOD", "OBS_VALUE"} <= set(frame.columns):
-        raise DataProviderError(f"{source} CSV without TIME_PERIOD / OBS_VALUE columns")
+        first = text.strip().splitlines()[0][:120] if text.strip() else ""
+        raise DataProviderError(f"{source} CSV without TIME_PERIOD / OBS_VALUE columns "
+                                f"(received: {first!r})")
     return clean_series(pd.Series(frame["OBS_VALUE"].to_numpy(), index=frame["TIME_PERIOD"]))
+
+
+_OBS_ATTRS = re.compile(r"<(?:\w+:)?Obs\b([^>]*)>", re.S)
+_ATTR = re.compile(r'(\w+)="([^"]*)"')
+_GENERIC_OBS = re.compile(
+    r"<(?:\w+:)?Obs>.*?<(?:\w+:)?ObsDimension[^>]*value=\"([^\"]+)\".*?"
+    r"<(?:\w+:)?ObsValue[^>]*value=\"([^\"]+)\".*?</(?:\w+:)?Obs>", re.S)
+
+
+def parse_sdmx_xml(text: str, source: str = "SDMX") -> pd.Series:
+    """Observations of SDMX-ML: structure-specific (``<Obs TIME_PERIOD= OBS_VALUE=>``) or generic."""
+    dates, values = [], []
+    for match in _OBS_ATTRS.finditer(text):
+        attrs = dict(_ATTR.findall(match.group(1)))
+        if "TIME_PERIOD" in attrs and "OBS_VALUE" in attrs:
+            dates.append(attrs["TIME_PERIOD"])
+            values.append(attrs["OBS_VALUE"])
+    if not dates:
+        for period, value in _GENERIC_OBS.findall(text):
+            dates.append(period)
+            values.append(value)
+    if not dates:
+        if "<html" in text[:500].lower() or "error" in text[:2000].lower():
+            first = " ".join(text.split())[:160]
+            raise DataProviderError(f"{source} answered without observations: {first!r}")
+        return clean_series(None)
+    return clean_series(pd.Series(values, index=dates, dtype="object"))
 
 
 # ----------------------------------------------------------------------- FRED
@@ -307,7 +342,10 @@ def parse_cnbc_bars(payload: Any, symbol: str = "") -> pd.Series:
     bar_data = payload.get("barData") if isinstance(payload, dict) else None
     if not isinstance(bar_data, dict):
         shown = sorted(payload)[:5] if isinstance(payload, dict) else type(payload).__name__
-        raise CnbcPayloadError(f"unexpected CNBC payload for {symbol} (received: {shown})")
+        status = ""
+        if isinstance(payload, dict) and (payload.get("status") or payload.get("statusMessage")):
+            status = f", status {payload.get('status')!r}: {str(payload.get('statusMessage'))[:120]!r}"
+        raise CnbcPayloadError(f"unexpected CNBC payload for {symbol} (received: {shown}{status})")
     bars = bar_data.get("priceBars") or []
     dates, closes = [], []
     for bar in bars:

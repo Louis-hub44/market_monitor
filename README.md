@@ -219,7 +219,8 @@ en donnée manquante ; il revient automatiquement dès que Bloomberg est disponi
 Sur un réseau d'entreprise, *Tester la connexion* (écran de démarrage) indique quelles
 sources passent. Si seule la BCE répond, `market-monitor ecb-series FLOW MOTIF` liste les
 séries qu'elle publie (dimension vide = joker, `+` = ou), par exemple
-`market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"` ; une clé trouvée s'utilise ensuite comme
+`market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"` ; `market-monitor diagnostic-taux` teste en une fois la
+Bundesbank, CNBC et la BCE et affiche leur réponse brute ; une clé trouvée s'utilise ensuite comme
 `ecb:FM/<clé>` dans `instruments.yaml`. Sinon, demander à l'informatique d'ouvrir `stooq.com`,
 `fred.stlouisfed.org`, `api.statistiken.bundesbank.de`, `www.stoxx.com`, `ts-api.cnbc.com` et
 `app2.msci.com`.

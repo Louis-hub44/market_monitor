@@ -1,5 +1,13 @@
 # Historique des versions
 
+## 1.5.7 — diagnostic des sources de taux
+- `market-monitor diagnostic-taux` : teste depuis le poste la Bundesbank (Bund 10 ans), CNBC
+  (Bund et OAT 10 ans) et la BCE (rendements quotidiens par pays), avec la réponse brute de
+  chaque serveur (code HTTP, début du contenu) et ce qui en est lu.
+- Messages d'erreur plus précis : statut et message renvoyés par CNBC, première ligne reçue
+  de la Bundesbank.
+- Bundesbank : une réponse SDMX-ML (XML) est lue aussi, si le serveur ignore la demande de CSV.
+
 ## 1.5.6 — Bund sur la courbe officielle de la Bundesbank
 - Bund 2, 5, 10 et 30 ans : courbe officielle de la Bundesbank en premier (publiée en fin de
   journée ; quelques pb d'écart possibles avec le générique d'Investing), puis CNBC et Stooq.

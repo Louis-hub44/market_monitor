@@ -10,6 +10,7 @@
     market-monitor check-referential
     market-monitor cache-clear [--provider fmp]
     market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"   # cherche des séries BCE
+    market-monitor diagnostic-taux                     # teste Bundesbank, CNBC, BCE (réponses brutes)
     market-monitor quote set ITRX_XOVER 287.5 [--date 2026-10-06]   # saisie manuelle
     market-monitor quote list [ITRX_MAIN] | quote import histo.csv | quote delete ID DATE
 
@@ -42,6 +43,7 @@ from market_monitor.data.factory import build_provider, rest_session, with_cache
 from market_monitor.data.models import to_date
 from market_monitor.data.providers.free import ECBClient
 from market_monitor.data.providers.manual import previous_business_day
+from market_monitor.diagnostics import rate_sources_report
 from market_monitor.doctor import run_checks
 from market_monitor.exceptions import InvalidRequestError, MarketMonitorError
 from market_monitor.export import export_daily_macro, load_layout
@@ -81,6 +83,7 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--start", default=(date.today() - timedelta(days=30)).isoformat())
     fetch.add_argument("--end", default=date.today().isoformat())
     fetch.add_argument("--no-cache", action="store_true")
+    sub.add_parser("diagnostic-taux", help="test the sovereign-rate sources (raw answers)")
     ecb = sub.add_parser("ecb-series", help="list ECB series matching a key pattern")
     ecb.add_argument("flow", help="dataflow, e.g. FM, YC, IRS")
     ecb.add_argument("pattern", help="key with wildcards, e.g. D.DE+FR+IT+ES....YLD")
@@ -196,6 +199,12 @@ def _ecb_series(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _diagnostic_taux(settings: Settings, args: argparse.Namespace) -> int:
+    for line in rate_sources_report(rest_session(settings), date.today(), settings.free.ecb_base_url):
+        print(line)
+    return EXIT_OK
+
+
 def _quote(settings: Settings, args: argparse.Namespace) -> int:
     monitor = MarketMonitor.from_settings(settings)
     store = monitor.manual_quotes()
@@ -241,7 +250,8 @@ def parse_number(text: str) -> float:
 COMMANDS: dict[str, Command] = {
     "doctor": _doctor, "check-referential": _check_referential, "perf": _perf,
     "daily-macro": _daily_macro, "alerts": _alerts, "fetch": _raw, "snapshot": _raw,
-    "cache-clear": _cache_clear, "ecb-series": _ecb_series, "quote": _quote,
+    "cache-clear": _cache_clear, "ecb-series": _ecb_series,
+    "diagnostic-taux": _diagnostic_taux, "quote": _quote,
 }
 
 

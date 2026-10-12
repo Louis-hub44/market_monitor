@@ -1,5 +1,6 @@
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from market_monitor.config import settings_from_dict
@@ -318,3 +319,43 @@ def test_euro_stoxx_50_is_not_served_by_fmp():
     ref = load_referential(REPO_CONFIG.parent / "instruments.yaml", REPO_CONFIG.parent / "watchlists.yaml")
     assert "fmp" not in ref.get("SX5E").tickers and ref.get("SX5E").tickers["free"].ticker == "^STOXX50E"
     assert "fmp" in ref.get("CAC").tickers  # CAC 40: FMP close matches the official one
+
+
+def test_cnbc_error_shows_the_status_message():
+    from market_monitor.data.providers.public import CnbcPayloadError, parse_cnbc_bars
+
+    refusal = {"requestDetails": {}, "status": 400, "statusMessage": "Invalid date range"}
+    with pytest.raises(CnbcPayloadError, match="status 400: 'Invalid date range'"):
+        parse_cnbc_bars(refusal, "FR10Y-FR")
+
+
+def test_bundesbank_xml_answer_is_read():
+    xml = ('<?xml version="1.0"?><message:StructureSpecificData><DataSet><Series FREQ="D">'
+           '<Obs TIME_PERIOD="2026-10-08" OBS_VALUE="3.496"/>'
+           '<Obs TIME_PERIOD="2026-10-09" OBS_VALUE="3.486" OBS_STATUS="A"/>'
+           '</Series></DataSet></message:StructureSpecificData>')
+    assert parse_sdmx_csv(xml, "Bundesbank").tolist() == [3.496, 3.486]
+    generic = ('<generic:Obs><generic:ObsDimension value="2026-10-09"/>'
+               '<generic:ObsValue value="3.486"/></generic:Obs>')
+    assert parse_sdmx_csv(generic).tolist() == [3.486]
+    with pytest.raises(DataProviderError, match="without observations"):
+        parse_sdmx_csv("<html><body>Error 500</body></html>", "Bundesbank")
+    with pytest.raises(DataProviderError, match="received: 'A,B'"):
+        parse_sdmx_csv("A,B\n1,2\n")
+
+
+def test_rate_sources_report(monkeypatch):
+    from market_monitor.data.providers.free import ECBClient
+    from market_monitor.diagnostics import rate_sources_report
+
+    csv = "KEY;TIME_PERIOD;OBS_VALUE\nX;2026-10-09;3.486\n"
+    refusal = {"requestDetails": {}, "status": 429, "statusMessage": "Too many requests"}
+    session = FakeSession([FakeResponse(200, text=csv), FakeResponse(200, text=csv),
+                           FakeResponse(200, payload=refusal, text='{"status": 429}')])
+    monkeypatch.setattr(ECBClient, "search", lambda self, flow, pattern: pd.DataFrame(
+        {"KEY": ["FM.D.FR.EUR.4F.BB.FR10YT_RR.YLD"], "TIME_PERIOD": ["2026-10-09"], "OBS_VALUE": [4.86]}))
+    lines = rate_sources_report(session, date(2026, 10, 12))
+    text = "\n".join(lines)
+    assert "== Bundesbank, Bund 10 ans" in text and "HTTP 200" in text and "lu : 09/10 = 3.486" in text
+    assert "CNBC, FR10Y-FR" in text and "Too many requests" in text
+    assert "FM.D.FR.EUR.4F.BB.FR10YT_RR.YLD  2026-10-09 = 4.86" in text
