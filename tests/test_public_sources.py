@@ -359,3 +359,19 @@ def test_rate_sources_report(monkeypatch):
     assert "== Bundesbank, Bund 10 ans" in text and "HTTP 200" in text and "lu : 09/10 = 3.486" in text
     assert "CNBC, FR10Y-FR" in text and "Too many requests" in text
     assert "FM.D.FR.EUR.4F.BB.FR10YT_RR.YLD  2026-10-09 = 4.86" in text
+    assert "FM/D.DE+FR+IT+ES.....YLD" in text  # 7 dimensions: the 6-field pattern got HTTP 400
+
+
+def test_cli_diagnostic_with_ssl_bypass(monkeypatch, capsys):
+    from market_monitor import cli
+
+    seen = {}
+
+    def fake_report(session, today, ecb_url):
+        seen["verify"] = session.verify
+        return ["== ok"]
+
+    monkeypatch.setattr(cli, "rate_sources_report", fake_report)
+    assert cli.main(["--config", str(REPO_CONFIG), "diagnostic-taux", "--contourner-ssl"]) == 0
+    out = capsys.readouterr().out
+    assert seen["verify"] is False and "désactivée" in out and "== ok" in out

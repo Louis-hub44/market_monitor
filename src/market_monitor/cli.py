@@ -10,7 +10,7 @@
     market-monitor check-referential
     market-monitor cache-clear [--provider fmp]
     market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"   # cherche des séries BCE
-    market-monitor diagnostic-taux                     # teste Bundesbank, CNBC, BCE (réponses brutes)
+    market-monitor diagnostic-taux [--contourner-ssl]  # teste Bundesbank, CNBC, BCE (réponses brutes)
     market-monitor quote set ITRX_XOVER 287.5 [--date 2026-10-06]   # saisie manuelle
     market-monitor quote list [ITRX_MAIN] | quote import histo.csv | quote delete ID DATE
 
@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from market_monitor.config import (
     KNOWN_PROVIDERS,
     MANUAL_PROVIDER,
     PROJECT_ROOT,
+    NetworkSettings,
     Settings,
     configure_logging,
     load_settings,
@@ -49,6 +51,7 @@ from market_monitor.exceptions import InvalidRequestError, MarketMonitorError
 from market_monitor.export import export_daily_macro, load_layout
 from market_monitor.export.text import alert_lines
 from market_monitor.monitor import MarketMonitor, PerformanceReport
+from market_monitor.network import describe
 from market_monitor.referential import load_referential
 
 EXIT_OK, EXIT_MISSING_DATA, EXIT_ERROR, EXIT_ALERT = 0, 1, 2, 3
@@ -83,7 +86,9 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--start", default=(date.today() - timedelta(days=30)).isoformat())
     fetch.add_argument("--end", default=date.today().isoformat())
     fetch.add_argument("--no-cache", action="store_true")
-    sub.add_parser("diagnostic-taux", help="test the sovereign-rate sources (raw answers)")
+    diag = sub.add_parser("diagnostic-taux", help="test the sovereign-rate sources (raw answers)")
+    diag.add_argument("--contourner-ssl", action="store_true",
+                      help="disable SSL verification (corporate proxy, trusted network only)")
     ecb = sub.add_parser("ecb-series", help="list ECB series matching a key pattern")
     ecb.add_argument("flow", help="dataflow, e.g. FM, YC, IRS")
     ecb.add_argument("pattern", help="key with wildcards, e.g. D.DE+FR+IT+ES....YLD")
@@ -200,6 +205,9 @@ def _ecb_series(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def _diagnostic_taux(settings: Settings, args: argparse.Namespace) -> int:
+    if args.contourner_ssl:
+        settings = replace(settings, network=NetworkSettings(insecure_ssl=True))
+    print(f"Connexion : {describe(settings.network.insecure_ssl, settings.network.ca_bundle)}")
     for line in rate_sources_report(rest_session(settings), date.today(), settings.free.ecb_base_url):
         print(line)
     return EXIT_OK

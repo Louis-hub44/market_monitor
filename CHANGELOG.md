@@ -1,5 +1,11 @@
 # Historique des versions
 
+## 1.5.8
+- `diagnostic-taux --contourner-ssl` : même test derrière le proxy d'inspection SSL (la
+  commande ne passe pas par l'écran de connexion du dashboard).
+- Recherche BCE corrigée (les clés du jeu FM ont 7 dimensions : HTTP 400 auparavant),
+  fréquences quotidienne (D) et jours ouvrés (B).
+
 ## 1.5.7 — diagnostic des sources de taux
 - `market-monitor diagnostic-taux` : teste depuis le poste la Bundesbank (Bund 10 ans), CNBC
   (Bund et OAT 10 ans) et la BCE (rendements quotidiens par pays), avec la réponse brute de

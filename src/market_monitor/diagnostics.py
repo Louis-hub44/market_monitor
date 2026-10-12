@@ -25,7 +25,8 @@ from market_monitor.data.providers.public import (
 from market_monitor.exceptions import MarketMonitorError
 
 BUND_10Y_KEY = "D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"
-ECB_PATTERN = "D.DE+FR+IT+ES....YLD"
+#: ECB "FM" keys have 7 dimensions: FREQ.REF_AREA.CURRENCY.PROVIDER.INSTRUMENT.PROVIDER_ID.DATA_TYPE
+ECB_PATTERNS = ("D.DE+FR+IT+ES.....YLD", "B.DE+FR+IT+ES.....YLD")
 
 
 def rate_sources_report(session: requests.Session | None, today: date,
@@ -48,14 +49,15 @@ def rate_sources_report(session: requests.Session | None, today: date,
         cnbc = CnbcClient(session=session, max_retries=0)
         lines += _parsed(partial(cnbc.fetch, symbol, start, end))
 
-    lines.append(f"== BCE, recherche FM/{ECB_PATTERN} (rendements quotidiens par pays)")
-    try:
-        found = ECBClient(ecb_base_url or DEFAULT_ECB_URL, session=session).search("FM", ECB_PATTERN)
-        lines.append(f"   {len(found)} série(s)")
-        lines += [f"   {row['KEY']}  {row.get('TIME_PERIOD', '')} = {row.get('OBS_VALUE', '')}"
-                  for _, row in found.head(20).iterrows()]
-    except MarketMonitorError as exc:
-        lines.append(f"   erreur : {exc}")
+    for pattern in ECB_PATTERNS:
+        lines.append(f"== BCE, recherche FM/{pattern} (rendements quotidiens par pays)")
+        try:
+            found = ECBClient(ecb_base_url or DEFAULT_ECB_URL, session=session).search("FM", pattern)
+            lines.append(f"   {len(found)} série(s)")
+            lines += [f"   {row['KEY']}  {row.get('TIME_PERIOD', '')} = {row.get('OBS_VALUE', '')}"
+                      for _, row in found.head(30).iterrows()]
+        except MarketMonitorError as exc:
+            lines.append(f"   erreur : {exc}")
     return lines
 
 
