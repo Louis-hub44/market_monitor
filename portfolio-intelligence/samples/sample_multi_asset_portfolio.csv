@@ -1,0 +1,17 @@
+identifier,name,asset class,weight,currency,sector,country,coupon,maturity,price,rating
+MSFT,Microsoft,Equity,0.055,USD,Technology,US,,,,
+AAPL,Apple,Equity,0.045,USD,Technology,US,,,,
+ASML.AS,ASML Holding,Equity,0.040,EUR,Technology,NL,,,,
+TTE.PA,TotalEnergies,Equity,0.035,EUR,Energy,FR,,,,
+SAN.PA,Sanofi,Equity,0.030,EUR,Healthcare,FR,,,,
+BNP.PA,BNP Paribas,Equity,0.030,EUR,Financial Services,FR,,,,
+NEE,NextEra Energy,Equity,0.025,USD,Utilities,US,,,,
+SPY,S&P 500 ETF,Fund,0.060,USD,Diversified,US,,,,
+DE0001102614,Bund 2.30% 2033,Government,0.090,EUR,Government,DE,2.30,2033-02-15,98.40,AAA
+FR0014008LR2,OAT 3.00% 2034,Government,0.080,EUR,Government,FR,3.00,2034-05-25,99.20,AA
+US912810TV0,US Treasury 4.25% 2044,Government,0.070,USD,Government,US,4.25,2044-11-15,97.30,AA
+XS2434891404,Corporate IG 3.75% 2030,Credit,0.060,EUR,Credit,FR,3.75,2030-03-15,99.40,A
+XS2517390783,Corporate HY 6.25% 2029,Credit,0.035,EUR,Credit,IT,6.25,2029-06-30,97.50,BB
+GLD,Gold ETF,Commodity,0.040,USD,Commodity,US,,,,
+USO,Oil ETF,Commodity,0.020,USD,Commodity,US,,,,
+CASH.EUR,Cash EUR,Cash,0.285,EUR,,,,,,

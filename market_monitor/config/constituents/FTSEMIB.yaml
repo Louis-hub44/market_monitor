@@ -1,0 +1,51 @@
+index: FTSEMIB
+name: FTSE MIB
+group: core
+currency: EUR
+as_of: null
+source: 'liste de départ (fin 2025), à vérifier ; poids : market-monitor constituents refresh'
+weights: marketcap
+refresh:
+  kind: manual
+  ishares_url: ''
+members:
+  - {ticker: A2A.MI, name: A2A, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: A2A.MI}
+  - {ticker: AMP.MI, name: Amplifon, sector: Santé, mic: XMIL, currency: EUR, fmp: AMP.MI}
+  - {ticker: AZM.MI, name: Azimut, sector: Finance, mic: XMIL, currency: EUR, fmp: AZM.MI}
+  - {ticker: BGN.MI, name: Banca Generali, sector: Finance, mic: XMIL, currency: EUR, fmp: BGN.MI}
+  - {ticker: BMED.MI, name: Banca Mediolanum, sector: Finance, mic: XMIL, currency: EUR, fmp: BMED.MI}
+  - {ticker: BAMI.MI, name: Banco BPM, sector: Finance, mic: XMIL, currency: EUR, fmp: BAMI.MI}
+  - {ticker: BMPS.MI, name: Banca MPS, sector: Finance, mic: XMIL, currency: EUR, fmp: BMPS.MI}
+  - {ticker: BPE.MI, name: BPER Banca, sector: Finance, mic: XMIL, currency: EUR, fmp: BPE.MI}
+  - {ticker: BC.MI, name: Brunello Cucinelli, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: BC.MI}
+  - {ticker: CPR.MI, name: Campari, sector: Consommation de base, mic: XMIL, currency: EUR, fmp: CPR.MI}
+  - {ticker: DIA.MI, name: DiaSorin, sector: Santé, mic: XMIL, currency: EUR, fmp: DIA.MI}
+  - {ticker: ENEL.MI, name: Enel, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: ENEL.MI}
+  - {ticker: ENI.MI, name: Eni, sector: Énergie, mic: XMIL, currency: EUR, fmp: ENI.MI}
+  - {ticker: RACE.MI, name: Ferrari, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: RACE.MI}
+  - {ticker: FBK.MI, name: FinecoBank, sector: Finance, mic: XMIL, currency: EUR, fmp: FBK.MI}
+  - {ticker: G.MI, name: Generali, sector: Finance, mic: XMIL, currency: EUR, fmp: G.MI}
+  - {ticker: HER.MI, name: Hera, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: HER.MI}
+  - {ticker: INW.MI, name: Inwit, sector: Communication, mic: XMIL, currency: EUR, fmp: INW.MI}
+  - {ticker: ISP.MI, name: Intesa Sanpaolo, sector: Finance, mic: XMIL, currency: EUR, fmp: ISP.MI}
+  - {ticker: IG.MI, name: Italgas, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: IG.MI}
+  - {ticker: IVG.MI, name: Iveco, sector: Industrie, mic: XMIL, currency: EUR, fmp: IVG.MI}
+  - {ticker: LDO.MI, name: Leonardo, sector: Industrie, mic: XMIL, currency: EUR, fmp: LDO.MI}
+  - {ticker: LTMC.MI, name: Lottomatica, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: LTMC.MI}
+  - {ticker: MB.MI, name: Mediobanca, sector: Finance, mic: XMIL, currency: EUR, fmp: MB.MI}
+  - {ticker: MONC.MI, name: Moncler, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: MONC.MI}
+  - {ticker: NEXI.MI, name: Nexi, sector: Finance, mic: XMIL, currency: EUR, fmp: NEXI.MI}
+  - {ticker: PIRC.MI, name: Pirelli, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: PIRC.MI}
+  - {ticker: PST.MI, name: Poste Italiane, sector: Finance, mic: XMIL, currency: EUR, fmp: PST.MI}
+  - {ticker: PRY.MI, name: Prysmian, sector: Industrie, mic: XMIL, currency: EUR, fmp: PRY.MI}
+  - {ticker: REC.MI, name: Recordati, sector: Santé, mic: XMIL, currency: EUR, fmp: REC.MI}
+  - {ticker: SPM.MI, name: Saipem, sector: Énergie, mic: XMIL, currency: EUR, fmp: SPM.MI}
+  - {ticker: SRG.MI, name: Snam, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: SRG.MI}
+  - {ticker: STLAM.MI, name: Stellantis, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: STLAM.MI}
+  - {ticker: STMMI.MI, name: STMicroelectronics, sector: Technologie, mic: XMIL, currency: EUR, fmp: STMMI.MI}
+  - {ticker: TIT.MI, name: Telecom Italia, sector: Communication, mic: XMIL, currency: EUR, fmp: TIT.MI}
+  - {ticker: TEN.MI, name: Tenaris, sector: Énergie, mic: XMIL, currency: EUR, fmp: TEN.MI}
+  - {ticker: TRN.MI, name: Terna, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: TRN.MI}
+  - {ticker: UCG.MI, name: UniCredit, sector: Finance, mic: XMIL, currency: EUR, fmp: UCG.MI}
+  - {ticker: UNI.MI, name: Unipol, sector: Finance, mic: XMIL, currency: EUR, fmp: UNI.MI}
+  - {ticker: AVIO.MI, name: Avio, sector: Industrie, mic: XMIL, currency: EUR, fmp: AVIO.MI}

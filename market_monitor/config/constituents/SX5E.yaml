@@ -1,0 +1,61 @@
+index: SX5E
+name: Euro Stoxx 50
+group: core
+currency: EUR
+as_of: null
+source: 'liste de départ (fin 2025), à vérifier ; poids : market-monitor constituents refresh'
+weights: marketcap
+refresh:
+  kind: manual
+  ishares_url: ''
+members:
+  - {ticker: ADS.DE, name: adidas, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: ADS.DE}
+  - {ticker: ADYEN.AS, name: Adyen, sector: Finance, mic: XAMS, currency: EUR, fmp: ADYEN.AS}
+  - {ticker: AD.AS, name: Ahold Delhaize, sector: Consommation de base, mic: XAMS, currency: EUR, fmp: AD.AS}
+  - {ticker: AI.PA, name: Air Liquide, sector: Matériaux, mic: XPAR, currency: EUR, fmp: AI.PA}
+  - {ticker: AIR.PA, name: Airbus, sector: Industrie, mic: XPAR, currency: EUR, fmp: AIR.PA}
+  - {ticker: ALV.DE, name: Allianz, sector: Finance, mic: XETR, currency: EUR, fmp: ALV.DE}
+  - {ticker: ABI.BR, name: AB InBev, sector: Consommation de base, mic: XBRU, currency: EUR, fmp: ABI.BR}
+  - {ticker: ARGX.BR, name: argenx, sector: Santé, mic: XBRU, currency: EUR, fmp: ARGX.BR}
+  - {ticker: ASML.AS, name: ASML, sector: Technologie, mic: XAMS, currency: EUR, fmp: ASML.AS}
+  - {ticker: CS.PA, name: AXA, sector: Finance, mic: XPAR, currency: EUR, fmp: CS.PA}
+  - {ticker: BAS.DE, name: BASF, sector: Matériaux, mic: XETR, currency: EUR, fmp: BAS.DE}
+  - {ticker: BAYN.DE, name: Bayer, sector: Santé, mic: XETR, currency: EUR, fmp: BAYN.DE}
+  - {ticker: BBVA.MC, name: BBVA, sector: Finance, mic: XMAD, currency: EUR, fmp: BBVA.MC}
+  - {ticker: SAN.MC, name: Banco Santander, sector: Finance, mic: XMAD, currency: EUR, fmp: SAN.MC}
+  - {ticker: BMW.DE, name: BMW, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: BMW.DE}
+  - {ticker: BNP.PA, name: BNP Paribas, sector: Finance, mic: XPAR, currency: EUR, fmp: BNP.PA}
+  - {ticker: BN.PA, name: Danone, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: BN.PA}
+  - {ticker: DBK.DE, name: Deutsche Bank, sector: Finance, mic: XETR, currency: EUR, fmp: DBK.DE}
+  - {ticker: DB1.DE, name: Deutsche Börse, sector: Finance, mic: XETR, currency: EUR, fmp: DB1.DE}
+  - {ticker: DHL.DE, name: DHL Group, sector: Industrie, mic: XETR, currency: EUR, fmp: DHL.DE}
+  - {ticker: DTE.DE, name: Deutsche Telekom, sector: Communication, mic: XETR, currency: EUR, fmp: DTE.DE}
+  - {ticker: ENEL.MI, name: Enel, sector: Services aux collectivités, mic: XMIL, currency: EUR, fmp: ENEL.MI}
+  - {ticker: ENI.MI, name: Eni, sector: Énergie, mic: XMIL, currency: EUR, fmp: ENI.MI}
+  - {ticker: EL.PA, name: EssilorLuxottica, sector: Santé, mic: XPAR, currency: EUR, fmp: EL.PA}
+  - {ticker: RACE.MI, name: Ferrari, sector: Consommation discrétionnaire, mic: XMIL, currency: EUR, fmp: RACE.MI}
+  - {ticker: RMS.PA, name: Hermès, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: RMS.PA}
+  - {ticker: IBE.MC, name: Iberdrola, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: IBE.MC}
+  - {ticker: ITX.MC, name: Inditex, sector: Consommation discrétionnaire, mic: XMAD, currency: EUR, fmp: ITX.MC}
+  - {ticker: IFX.DE, name: Infineon, sector: Technologie, mic: XETR, currency: EUR, fmp: IFX.DE}
+  - {ticker: INGA.AS, name: ING, sector: Finance, mic: XAMS, currency: EUR, fmp: INGA.AS}
+  - {ticker: ISP.MI, name: Intesa Sanpaolo, sector: Finance, mic: XMIL, currency: EUR, fmp: ISP.MI}
+  - {ticker: OR.PA, name: L'Oréal, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: OR.PA}
+  - {ticker: MC.PA, name: LVMH, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: MC.PA}
+  - {ticker: MBG.DE, name: Mercedes-Benz, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: MBG.DE}
+  - {ticker: MUV2.DE, name: Munich Re, sector: Finance, mic: XETR, currency: EUR, fmp: MUV2.DE}
+  - {ticker: NDA-FI.HE, name: Nordea, sector: Finance, mic: XHEL, currency: EUR, fmp: NDA-FI.HE}
+  - {ticker: PRX.AS, name: Prosus, sector: Consommation discrétionnaire, mic: XAMS, currency: EUR, fmp: PRX.AS}
+  - {ticker: RHM.DE, name: Rheinmetall, sector: Industrie, mic: XETR, currency: EUR, fmp: RHM.DE}
+  - {ticker: SAF.PA, name: Safran, sector: Industrie, mic: XPAR, currency: EUR, fmp: SAF.PA}
+  - {ticker: SGO.PA, name: Saint-Gobain, sector: Industrie, mic: XPAR, currency: EUR, fmp: SGO.PA}
+  - {ticker: SAN.PA, name: Sanofi, sector: Santé, mic: XPAR, currency: EUR, fmp: SAN.PA}
+  - {ticker: SAP.DE, name: SAP, sector: Technologie, mic: XETR, currency: EUR, fmp: SAP.DE}
+  - {ticker: SU.PA, name: Schneider Electric, sector: Industrie, mic: XPAR, currency: EUR, fmp: SU.PA}
+  - {ticker: SIE.DE, name: Siemens, sector: Industrie, mic: XETR, currency: EUR, fmp: SIE.DE}
+  - {ticker: ENR.DE, name: Siemens Energy, sector: Industrie, mic: XETR, currency: EUR, fmp: ENR.DE}
+  - {ticker: TTE.PA, name: TotalEnergies, sector: Énergie, mic: XPAR, currency: EUR, fmp: TTE.PA}
+  - {ticker: UCG.MI, name: UniCredit, sector: Finance, mic: XMIL, currency: EUR, fmp: UCG.MI}
+  - {ticker: DG.PA, name: Vinci, sector: Industrie, mic: XPAR, currency: EUR, fmp: DG.PA}
+  - {ticker: VOW3.DE, name: Volkswagen, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: VOW3.DE}
+  - {ticker: WKL.AS, name: Wolters Kluwer, sector: Industrie, mic: XAMS, currency: EUR, fmp: WKL.AS}

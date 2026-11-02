@@ -1,0 +1,11 @@
+index: SXXP
+name: Stoxx Europe 600
+group: extended
+currency: EUR
+as_of: null
+source: 'à charger : market-monitor constituents refresh --index SXXP'
+weights: holdings
+refresh:
+  kind: ishares
+  url: https://www.ishares.com/de/privatanleger/de/produkte/251931/ishares-stoxx-europe-600-ucits-etf-de-fund/1478358465952.ajax?fileType=csv&fileName=EXSA_holdings&dataType=fund
+members:

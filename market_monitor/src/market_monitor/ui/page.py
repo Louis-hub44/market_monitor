@@ -1,0 +1,425 @@
+"""Streamlit rendering of the Market Monitor home screen.
+
+``render_market_monitor`` draws everything inside the current page and can be called
+from the terminal's multipage app; ``main`` is the standalone entry point.
+Widget keys are prefixed with ``key`` so the page can coexist with other modules.
+"""
+
+from __future__ import annotations
+
+import os
+from collections import Counter
+from collections.abc import Callable, Sequence
+from dataclasses import replace
+from datetime import date
+from functools import partial
+from html import escape
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import streamlit as st
+
+from market_monitor import __version__
+from market_monitor.alerts import AlertRule, load_rules
+from market_monitor.analytics.performance import Horizon, rank_movers
+from market_monitor.config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_ENV_PATH,
+    ENV_CONFIG_PATH,
+    Settings,
+    UiSettings,
+    configure_logging,
+    load_settings,
+)
+from market_monitor.equities.instruments import is_stock_id, stock_instrument, stock_ticker
+from market_monitor.equities.universe import EquityUniverse
+from market_monitor.exceptions import MarketMonitorError
+from market_monitor.export import DailyMacroLayout, load_layout
+from market_monitor.export.builder import movers_candidates
+from market_monitor.export.layout import MoversRule
+from market_monitor.monitor import MarketMonitor, PerformanceReport
+from market_monitor.network import build_session
+from market_monitor.text_format import (
+    ASSET_CLASS_LABELS,
+    HORIZON_LABELS,
+    SOURCE_LABELS,
+    format_change,
+    fr_number,
+    french_date,
+    short_date,
+)
+from market_monitor.ui import theme
+from market_monitor.ui.alerts_view import alerts_strip, load_alerts, render_alerts
+from market_monitor.ui.caching import bump_refresh_nonce, cached, refresh_nonce
+from market_monitor.ui.charts import heat_tiles
+from market_monitor.ui.correlation_view import render_correlations
+from market_monitor.ui.curves_view import render_curves
+from market_monitor.ui.daily_macro_view import render_daily_macro
+from market_monitor.ui.formatting import (
+    CHECK_MARK,
+    overview_column_config,
+    overview_table,
+    style_overview,
+)
+from market_monitor.ui.history_view import render_history
+from market_monitor.ui.instrument_view import (
+    apply_query_params,
+    instrument_key,
+    open_instrument,
+    render_instrument,
+    view_key,
+)
+from market_monitor.ui.movers_view import render_movers
+from market_monitor.ui.network_view import (
+    render_network_gate,
+    render_network_sidebar,
+    render_ssl_rescue,
+    status_label,
+)
+from market_monitor.ui.seance_view import render_session
+
+ROW_HEIGHT_PX = 35
+
+
+# ====================================================================== public
+VIEWS = {"seance": "Séance d'hier", "overview": "Vue d'ensemble", "movers": "Top movers",
+         "instrument": "Fiche", "curves": "Courbes",
+         "history": "Historique", "correlations": "Corrélations", "alerts": "Alertes",
+         "daily": "Daily macro"}
+
+
+def render_market_monitor(monitor: MarketMonitor, ui: UiSettings, *, key: str = "mm",
+                          layout: DailyMacroLayout | None = None,
+                          rules: Sequence[AlertRule] | None = None,
+                          status: str | None = None,
+                          equities: EquityUniverse | None = None) -> None:
+    """Draw the dashboard for ``monitor`` in the current Streamlit container.
+
+    ``status`` (e.g. the network mode) is shown as a chip in the top bar; ``equities``
+    (index members) feeds the top movers and the members' instrument pages.
+    """
+    watchlist, as_of = _sidebar(monitor, ui, key)
+    _topbar(monitor, status)
+    apply_query_params(monitor, key, known=_stock_known(equities))
+    chosen = view_key(key)  # set by a click elsewhere (open_instrument): no default then
+    default = None if chosen in st.session_state else (ui.default_view if ui.default_view in VIEWS
+                                                         else "overview")
+    view = st.segmented_control("Vue", list(VIEWS), default=default, required=True,
+                                format_func=lambda v: VIEWS[v],
+                                label_visibility="collapsed", key=chosen) or "overview"
+    if view == "instrument":
+        watched = monitor.select(watchlist)
+        render_instrument(_with_stock(monitor, equities, key), ui, as_of, key,
+                          closing=layout.closing if layout else None,
+                          default_id=watched[0] if watched else None)
+    elif view == "movers":
+        render_movers(monitor, equities, ui, as_of, key)
+    elif view == "seance":
+        report = _load_report(monitor, watchlist, as_of, ui, key)
+        if report is not None:
+            render_ssl_rescue(report.errors, key)
+            render_session(monitor, equities, ui, report, as_of, key, rules,
+                           closing=layout.closing if layout else None)
+    elif view == "curves":
+        render_curves(monitor, ui, as_of, key, closing=layout.closing if layout else None)
+    elif view == "history":
+        render_history(monitor, ui, watchlist, as_of, key)
+    elif view == "correlations":
+        render_correlations(monitor, ui, watchlist, as_of, key)
+    elif view == "alerts":
+        render_alerts(monitor, rules, ui, as_of, key)
+    elif view == "daily":
+        render_daily_macro(monitor, ui, layout, as_of, key, rules, equities)
+    else:
+        _overview(monitor, ui, watchlist, as_of, key, rules)
+
+
+def _stock_known(equities: EquityUniverse | None) -> Callable[[str], bool]:
+    def known(instrument_id: str) -> bool:
+        return (equities is not None and is_stock_id(instrument_id)
+                and stock_ticker(instrument_id) in equities.compositions.member_info())
+    return known
+
+
+def _with_stock(monitor: MarketMonitor, equities: EquityUniverse | None, key: str) -> MarketMonitor:
+    """The monitor, extended with the index member whose page is open (``EQ:`` id)."""
+    selected = st.session_state.get(instrument_key(key))
+    if equities is None or not is_stock_id(selected):
+        return monitor
+    member = equities.compositions.member_info().get(stock_ticker(str(selected)))
+    return monitor.with_instruments([stock_instrument(member)]) if member is not None else monitor
+
+
+def _overview(monitor: MarketMonitor, ui: UiSettings, watchlist: str, as_of: date, key: str,
+              rules: Sequence[AlertRule] | None) -> None:
+    report = _load_report(monitor, watchlist, as_of, ui, key)
+    if report is None:
+        return
+    render_ssl_rescue(report.errors, key)
+    _header(report)
+    alerts_strip(load_alerts(monitor, rules, ui, as_of, key))
+    if report.table["level"].isna().all():
+        st.warning("Aucune donnée pour cette sélection. Le panneau Qualité des données détaille les sources.")
+        _diagnostics(report)
+        return
+    _movers(report, ui)
+    _tables(report, ui, key)
+    st.markdown('<h3 class="mm-class">Heatmap des z-scores</h3>', unsafe_allow_html=True)
+    horizon = st.segmented_control(
+        "Couleur des tuiles", options=[Horizon.D1, Horizon.W1], default=Horizon.D1, required=True,
+        format_func=lambda h: f"z-score {HORIZON_LABELS[h.value]}", key=f"{key}-horizon",
+    ) or Horizon.D1
+    st.plotly_chart(
+        heat_tiles(report.table, horizon, columns=ui.heatmap_columns, clip=ui.zscore_clip),
+        width="stretch", config={"displayModeBar": False}, key=f"{key}-heat",
+    )
+    _diagnostics(report)
+
+
+def main() -> None:
+    """Standalone app: ``streamlit run app.py``."""
+    st.set_page_config(page_title="Market Monitor", page_icon=":material/monitoring:", layout="wide")
+    st.markdown(theme.page_css(), unsafe_allow_html=True)
+    stamp = _config_stamp()
+    try:
+        settings = _settings(stamp)
+        configure_logging(settings)
+    except MarketMonitorError as exc:
+        st.error(f"Configuration invalide : {exc}")
+        st.stop()
+    network = settings.network
+    if settings.ui.network_gate:
+        chosen = render_network_gate(settings)
+        if chosen is None:  # start screen: nothing is fetched before "Lancer"
+            st.stop()
+        network = chosen
+        settings = replace(settings, network=network)
+    try:
+        monitor = _monitor(settings, network.insecure_ssl, str(network.ca_bundle or ""), stamp)
+        layout = _layout(settings, monitor, stamp)
+        rules = _rules(settings, monitor, stamp)
+    except MarketMonitorError as exc:
+        st.error(f"Configuration invalide : {exc}")
+        st.stop()
+    if settings.ui.refresh == "manual":
+        last = monitor.last_refresh
+        if last is None or last.astimezone(monitor.now().tzinfo).date() != monitor.today():
+            monitor.mark_refresh()  # first page of the day on a long-running server
+    render_market_monitor(monitor, settings.ui, layout=layout, rules=rules,
+                          status=status_label(network),
+                          equities=_equities(settings, network.insecure_ssl, str(network.ca_bundle or ""),
+                                             stamp))
+    if settings.ui.network_gate:
+        render_network_sidebar(network)
+
+
+# ===================================================================== loading
+def _config_stamp() -> str:
+    """Version + modification times of the configuration files.
+
+    Part of every resource-cache key: editing a YAML file or installing a new version
+    reloads the referential without restarting the Streamlit server.
+    """
+    config = Path(os.environ.get(ENV_CONFIG_PATH) or DEFAULT_CONFIG_PATH)
+    files = sorted(config.parent.glob("*.yaml")) + [DEFAULT_ENV_PATH]
+    times = [f"{f.name}:{f.stat().st_mtime_ns}" for f in files if f.is_file()]
+    return "|".join([__version__, *times])
+
+
+@st.cache_resource(show_spinner=False)
+def _settings(stamp: str) -> Settings:
+    return load_settings()
+
+
+@st.cache_resource(show_spinner="Connexion aux sources de données…")
+def _monitor(_settings: Settings, insecure_ssl: bool, ca_bundle: str, stamp: str) -> MarketMonitor:
+    """One monitor per network policy and configuration version (the plain arguments are the key)."""
+    monitor = MarketMonitor.from_settings(_settings)
+    if _settings.ui.refresh == "manual":
+        monitor.mark_refresh()  # loaded once now, then reused while navigating
+    return monitor
+
+
+@st.cache_resource(show_spinner=False)
+def _equities(_settings: Settings, insecure_ssl: bool, ca_bundle: str, stamp: str) -> EquityUniverse | None:
+    """Index members (compositions + stored prices); nothing is downloaded here."""
+    try:
+        return EquityUniverse.from_settings(_settings.equities,
+                                            session=build_session(insecure_ssl, ca_bundle or None))
+    except MarketMonitorError:
+        return None
+
+
+@st.cache_resource(show_spinner=False)
+def _layout(_settings: Settings, _monitor: MarketMonitor, stamp: str) -> DailyMacroLayout | None:
+    if not _settings.daily_macro_path.is_file():
+        return None
+    return load_layout(_settings.daily_macro_path, _monitor.referential)
+
+
+@st.cache_resource(show_spinner=False)
+def _rules(_settings: Settings, _monitor: MarketMonitor, stamp: str) -> tuple[AlertRule, ...]:
+    if not _settings.alerts_path.is_file():
+        return ()
+    return load_rules(_settings.alerts_path, _monitor.referential)
+
+
+def _compute_report(_monitor: MarketMonitor, monitor_id: int, watchlist: str, as_of: str,
+                    nonce: int, top_movers: int = 6) -> PerformanceReport:
+    """Performance, with the would-be movers cross-checked so a bad print is not shown as one."""
+    report = _monitor.performance(watchlist, as_of)
+    candidates = movers_candidates(report.table, MoversRule(universe=(), count=max(top_movers, 1)))
+    return _monitor.verify(report, candidates)
+
+
+def _load_report(monitor: MarketMonitor, watchlist: str, as_of: date, ui: UiSettings,
+                 key: str) -> PerformanceReport | None:
+    compute = cached(_compute_report, ui, "Chargement des marchés…")
+    try:
+        return compute(monitor, id(monitor), watchlist, as_of.isoformat(), refresh_nonce(key), ui.top_movers)
+    except MarketMonitorError as exc:
+        st.error(f"Chargement impossible : {exc}")
+        return None
+
+
+# ===================================================================== sidebar
+def _sidebar(monitor: MarketMonitor, ui: UiSettings, key: str) -> tuple[str, date]:
+    ref = monitor.referential
+    names = list(ref.watchlist_names) or ["*"]
+    default = names.index(ui.default_watchlist) if ui.default_watchlist in names else 0
+    with st.sidebar:
+        st.markdown('<div class="mm-side-title">Sélection</div>', unsafe_allow_html=True)
+        watchlist = st.selectbox(
+            "Watchlist", names, index=default, key=f"{key}-watchlist",
+            format_func=lambda n: ref.watchlist(n).description or n if n in ref.watchlist_names else n,
+        )
+        today = monitor.today()
+        as_of = st.date_input("Date d'arrêté", value=today, max_value=today, format="DD/MM/YYYY",
+                              key=f"{key}-asof")
+        if st.button("Actualiser les données", icon=":material/refresh:", type="primary",
+                     width="stretch", key=f"{key}-refresh"):
+            bump_refresh_nonce(key)
+            if ui.refresh == "manual":
+                monitor.mark_refresh()
+        if ui.refresh == "manual" and monitor.last_refresh is not None:
+            loaded = monitor.last_refresh.astimezone(monitor.now().tzinfo)
+            st.caption(f"Données chargées à {loaded:%H:%M} : changer de vue ne réinterroge pas les "
+                       "sources. « Actualiser les données » pour les recharger.")
+        chain = ", ".join(SOURCE_LABELS.get(n, n) for n in monitor.service.provider_names)
+        st.caption(f"Sources par ordre de priorité : {chain}. Version {__version__}.")
+    return watchlist, as_of if isinstance(as_of, date) else today
+
+
+# ====================================================================== blocks
+def _topbar(monitor: MarketMonitor, status: str | None) -> None:
+    chain = " › ".join(SOURCE_LABELS.get(n, n) for n in monitor.service.provider_names)
+    chips = f'<span class="mm-chip">{escape(chain)}</span>'
+    if status:
+        cls = "warn" if status.startswith("SSL") else "ok"
+        chips += f'<span class="mm-chip {cls}">{escape(status)}</span>'
+    st.markdown(
+        '<div class="mm-topbar"><div><div class="mm-title">Market Monitor</div>'
+        '<div class="mm-tagline">Écran multi-actifs · actions, taux, change, matières premières</div>'
+        f'</div><div class="mm-chips">{chips}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _header(report: PerformanceReport) -> None:
+    table = report.table
+    last = table["level_date"].max()
+    stale = int(table["stale"].sum())
+    tiles = [
+        ("Arrêté au", french_date(report.as_of), ""),
+        ("Instruments", str(len(table)), ""),
+        ("Dernière cotation", short_date(last) if pd.notna(last) else "–", ""),
+        ("Sans cotation récente", str(stale), "warn" if stale else ""),
+    ]
+    html = "".join(f'<div class="mm-kpi {cls}"><div class="lbl">{escape(label)}</div>'
+                   f'<div class="val">{escape(value)}</div></div>' for label, value, cls in tiles)
+    st.markdown(f'<div class="mm-kpis">{html}</div>', unsafe_allow_html=True)
+    if stale:
+        st.caption(f"{stale} ligne(s) sans cotation récente, affichées en grisé.")
+
+
+def _movers(report: PerformanceReport, ui: UiSettings) -> None:
+    movers = rank_movers(report.table, Horizon.D1, ui.top_movers)
+    if movers.empty:
+        return
+    items = []
+    for _, row in movers.iterrows():
+        color = theme.sign_color(row["chg_1d"])
+        change = format_change(row["chg_1d"], row["change_unit"])
+        items.append(
+            f'<span class="mm-mover"><span class="name">{escape(row["name"])}</span>'
+            f'<span class="chg" style="color:{color}">{change}</span>'
+            f'<span class="z">z {fr_number(row["z_1d"], 1, sign=True)}</span></span>'
+        )
+    st.markdown('<div class="mm-section">Mouvements marquants sur la séance</div>',
+                unsafe_allow_html=True)
+    st.markdown(f'<div class="mm-movers">{"".join(items)}</div>', unsafe_allow_html=True)
+
+
+def _tables(report: PerformanceReport, ui: UiSettings, key: str) -> None:
+    """One Koyfin-style table per asset class, full width; a click opens the instrument page."""
+    st.caption("Sélectionner une ligne (case à gauche) ouvre la fiche de l'instrument. Taux : niveau "
+               "en %, variations en pb. 52 semaines : plus bas, plus haut et dernière clôture (point, "
+               "ambré près d'un extrême). Date affichée seulement pour une cotation ancienne.")
+    for asset_class, table in report.by_asset_class().items():
+        _table_block(asset_class.value, table, ui, key, report.levels)
+
+
+def _table_block(asset_class: str, table: pd.DataFrame, ui: UiSettings, key: str,
+                 levels: pd.DataFrame | None) -> None:
+    st.markdown(f'<h3 class="mm-class">{ASSET_CLASS_LABELS[asset_class]}</h3>', unsafe_allow_html=True)
+    display = overview_table(table, levels)
+    table_key = f"{key}-table-{asset_class}"
+    st.dataframe(
+        style_overview(display, table, ui.zscore_clip), hide_index=True, width="stretch",
+        height=(len(display) + 1) * ROW_HEIGHT_PX + 3, key=table_key,
+        on_select=partial(_open_selected, key, table_key, [str(i) for i in table.index]),
+        selection_mode="single-row",
+        column_config=overview_column_config(display),
+    )
+
+
+def _open_selected(key: str, table_key: str, ids: list[str]) -> None:
+    """Row clicked: open its instrument page (callback, before the rerun)."""
+    state = st.session_state.get(table_key)
+    rows = list(state["selection"]["rows"]) if state else []
+    if rows and rows[0] < len(ids):
+        open_instrument(key, ids[rows[0]])
+        # forget the selection, so that the same row opens its page again next time
+        st.session_state.pop(table_key, None)
+
+
+def _diagnostics(report: PerformanceReport) -> None:
+    table = report.table
+    proxies: dict[str, Any] = {str(k): v for k, v in table["proxy"].dropna().items()}
+    checks = {k: " ; ".join(v) for k, v in report.checks().items()
+              if k in table.index and pd.notna(table.at[k, "level"])}
+    n_issues = len(report.errors) + len(report.warnings) + len(proxies) + len(checks)
+    with st.expander(f"Qualité des données ({n_issues} point(s) d'attention)", expanded=False):
+        sources = Counter(SOURCE_LABELS.get(s, s) for s in table["source"].dropna())
+        st.caption("Lignes servies par source : "
+                   + (", ".join(f"{k} {v}" for k, v in sources.items()) or "aucune") + ".")
+        if checks:
+            st.caption(f"{CHECK_MARK} : variation de séance à vérifier (mouvement suspect ou "
+                       "changement de contrat), exclue des mouvements marquants et des alertes.")
+        sections: list[tuple[str, dict[str, Any]]] = [
+            ("À vérifier avant diffusion", checks),
+            ("Données manquantes", dict(report.errors)),
+            ("Avertissements", dict(report.warnings)),
+            ("Proxies utilisés", proxies),
+        ]
+        for title, issues in sections:
+            if issues:
+                st.markdown(f"**{title}**")
+                st.dataframe(_issues_frame(issues, table), hide_index=True, width="stretch")
+
+
+def _issues_frame(issues: dict[str, Any], table: pd.DataFrame) -> pd.DataFrame:
+    names = table["name"].reindex(list(issues)).fillna("")
+    return pd.DataFrame({"Instrument": names.to_numpy(), "Code": list(issues),
+                         "Détail": [str(v) for v in issues.values()]})

@@ -1,0 +1,290 @@
+# Référentiel d'instruments du Market Monitor.
+#
+# Chaque instrument : identifiant canonique (MAJUSCULES), nom, classe d'actifs, groupe
+# d'affichage, type de cotation, unité, et ticker natif par provider.
+#
+#   quote  : price  -> variations en %          (actions, FX, matières premières, crypto)
+#            yield  -> niveau en %, variations en pb (x100)
+#            spread -> niveau en pb, variations en pb
+#            vol    -> niveau en points de vol, variations en points (surchargeable : change: pct)
+#   ticker : soit une chaîne, soit {ticker, scale, proxy}
+#            scale : facteur appliqué pour ramener la source à l'unité du référentiel
+#            proxy : description si la source n'est PAS l'instrument exact (ETF, future...) ;
+#                    pour une chaîne "a|b", {alternative: description} ne signale que celles-ci
+#   derived: combinaison linéaire d'autres instruments (spreads, pentes, papillons)
+#            niveau = multiplier x somme(weight_i x niveau_i), dates communes uniquement
+#   roll   : calendrier d'échéance d'un future générique front-month (brent | wti | ttf) :
+#            le 1J du jour de changement de contrat est signalé et exclu des mouvements,
+#            des alertes et de l'estimation de la volatilité
+#   curve  : place d'un taux souverain sur la courbe de son pays {country: FR, tenor: 10} :
+#            fiche instrument (spread contre le Bund de même maturité) et courbes de taux
+#
+# Tickers marqués "à vérifier" : à contrôler sur le Terminal / la source avant production.
+
+version: 1
+
+defaults:
+  equity:      {quote: price, unit: pts}
+  rates:       {quote: yield, unit: "%"}
+  credit:      {quote: spread, unit: pb}
+  fx:          {quote: price, unit: ""}
+  commodities: {quote: price}
+  volatility:  {quote: vol, unit: pts}
+  crypto:      {quote: price, unit: USD}
+
+instruments:
+  # ------------------------------------------------------------------ actions
+  # Pas de FMP pour l'Euro Stoxx 50 : STOXX calcule l'indice jusqu'à 22 h et FMP retient la
+  # valeur de fin de soirée (6 197,10 au lieu de la clôture officielle 6 173,37 le 09/10/2026).
+  SX5E:    {name: Euro Stoxx 50, class: equity, group: Europe,
+            tickers: {bloomberg: SX5E Index, free: ^STOXX50E}}
+  SXXP:    {name: Stoxx Europe 600, class: equity, group: Europe,
+            tickers: {bloomberg: SXXP Index, free: ^STOXX}}
+  CAC:     {name: CAC 40, class: equity, group: Europe,
+            tickers: {bloomberg: CAC Index, fmp: ^FCHI, free: ^FCHI}}
+  DAX:     {name: DAX, class: equity, group: Europe,
+            tickers: {bloomberg: DAX Index, fmp: ^GDAXI, free: ^GDAXI}}
+  FTSEMIB: {name: FTSE MIB, class: equity, group: Europe,
+            tickers: {bloomberg: FTSEMIB Index, free: FTSEMIB.MI}}
+  IBEX:    {name: IBEX 35, class: equity, group: Europe,
+            tickers: {bloomberg: IBEX Index, free: ^IBEX}}
+  SPX:     {name: S&P 500, class: equity, group: États-Unis,
+            tickers: {bloomberg: SPX Index, fmp: ^GSPC, free: ^GSPC}}
+  NDX:     {name: Nasdaq 100, class: equity, group: États-Unis,
+            tickers: {bloomberg: NDX Index, fmp: ^NDX, free: ^NDX}}
+  NKY:     {name: Nikkei 225, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: NKY Index, fmp: ^N225, free: ^N225}}
+  CSI300:  {name: CSI 300, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: SHSZ300 Index, free: 000300.SS}}
+  # MSCI EM : niveau officiel de l'indice (MSCI, ~1 700 en 2026), puis le future ICE MME=F
+  # (proxy, base de quelques points). L'ETF EEM (~50 USD) n'est plus utilisé : son prix
+  # n'est pas le niveau de l'indice publié dans la revue.
+  MXEF:    {name: MSCI Emerging Markets, class: equity, group: Asie & émergents,
+            tickers: {bloomberg: MXEF Index,
+                      free: {ticker: "msci:891800|MME=F",
+                             proxy: {"MME=F": future ICE MSCI EM (front-month)}}}}
+
+  # Secteurs Stoxx 600 (fallback gratuit : ETF iShares sectoriels Xetra, à vérifier)
+  SX7P:  {name: Banques, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX7P Index, free: {ticker: EXV1.DE, proxy: ETF iShares Stoxx 600 Banks}}}
+  SXIP:  {name: Assurance, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXIP Index, free: {ticker: EXH5.DE, proxy: ETF iShares Stoxx 600 Insurance}}}
+  SXFP:  {name: Services financiers, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXFP Index, free: {ticker: EXH2.DE, proxy: ETF iShares Stoxx 600 Fin. Services}}}
+  SXEP:  {name: Énergie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXEP Index, free: {ticker: EXH1.DE, proxy: ETF iShares Stoxx 600 Oil & Gas}}}
+  SX6P:  {name: Services aux collectivités, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX6P Index, free: {ticker: EXH9.DE, proxy: ETF iShares Stoxx 600 Utilities}}}
+  SXPP:  {name: Matières premières, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXPP Index, free: {ticker: EXV6.DE, proxy: ETF iShares Stoxx 600 Basic Resources}}}
+  SX4P:  {name: Chimie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX4P Index, free: {ticker: EXV7.DE, proxy: ETF iShares Stoxx 600 Chemicals}}}
+  SXOP:  {name: Construction & matériaux, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXOP Index, free: {ticker: EXV8.DE, proxy: ETF iShares Stoxx 600 Construction}}}
+  SXNP:  {name: Industrie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXNP Index, free: {ticker: EXH4.DE, proxy: ETF iShares Stoxx 600 Industrials}}}
+  SXAP:  {name: Automobile, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXAP Index, free: {ticker: EXV5.DE, proxy: ETF iShares Stoxx 600 Autos}}}
+  SX8P:  {name: Technologie, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX8P Index, free: {ticker: EXV3.DE, proxy: ETF iShares Stoxx 600 Technology}}}
+  SXKP:  {name: Télécoms, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXKP Index, free: {ticker: EXV2.DE, proxy: ETF iShares Stoxx 600 Telecom}}}
+  SXMP:  {name: Médias, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXMP Index, free: {ticker: EXH6.DE, proxy: ETF iShares Stoxx 600 Media}}}
+  SXDP:  {name: Santé, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXDP Index, free: {ticker: EXV4.DE, proxy: ETF iShares Stoxx 600 Health Care}}}
+  SX3P:  {name: Alimentation & boissons, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX3P Index, free: {ticker: EXH3.DE, proxy: ETF iShares Stoxx 600 Food & Bev.}}}
+  SXQP:  {name: Biens de consommation, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXQP Index, free: {ticker: EXH7.DE, proxy: ETF iShares Stoxx 600 Pers. & Household}}}
+  SXRP:  {name: Distribution, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXRP Index, free: {ticker: EXH8.DE, proxy: ETF iShares Stoxx 600 Retail}}}
+  SXTP:  {name: Voyages & loisirs, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SXTP Index, free: {ticker: EXV9.DE, proxy: ETF iShares Stoxx 600 Travel & Leisure}}}
+  SX86P: {name: Immobilier, class: equity, group: Secteurs Stoxx 600,
+          tickers: {bloomberg: SX86P Index, free: {ticker: EXI5.DE, proxy: ETF iShares Stoxx 600 Real Estate}}}
+
+  # -------------------------------------------------------------------- taux
+  # Génériques Bloomberg (rendements en %). Fallback gratuit en chaîne "a|b|c" (la première
+  # source qui répond l'emporte, un repli est signalé en avertissement) :
+  #   souverains européens, Gilt, JGB : 1. Stooq (stooq:<n><pays>y.b, clôtures de fin de
+  #          journée, gratuit sans clé), 2. CNBC (cnbc:<PAYS><n>Y-<PAYS>) - depuis le 25/10/2026,
+  #          les barres quotidiennes CNBC ne donnent plus la clôture du jour (Bund 3,340 % au
+  #          lieu de 3,355 %, OAT 4,908 % au lieu de 4,924 % le 27/10) ; CNBC reste en secours et
+  #          sert de contrôle croisé (écart > quality.cross_check_quote_tol_bp : « À vérifier ») ;
+  #   Bund : 3. courbe officielle de la Bundesbank (bbk:, maturité constante, ~4-8 pb au-dessus
+  #          du générique : dernier recours).
+  BUND_2Y:   {name: Bund 2 ans,  class: rates, group: Allemagne,
+              curve: {country: DE, tenor: 2},
+              tickers: {bloomberg: GDBR2 Index, free: "stooq:2dey.b|cnbc:DE2Y-DE|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A"}}
+  BUND_5Y:   {name: Bund 5 ans,  class: rates, group: Allemagne,
+              curve: {country: DE, tenor: 5},
+              tickers: {bloomberg: GDBR5 Index, free: "stooq:5dey.b|cnbc:DE5Y-DE|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R05XX.R.A.A._Z._Z.A"}}
+  BUND_10Y:  {name: Bund 10 ans, class: rates, group: Allemagne,
+              curve: {country: DE, tenor: 10},
+              tickers: {bloomberg: GDBR10 Index, free: "stooq:10dey.b|cnbc:DE10Y-DE|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A"}}
+  BUND_30Y:  {name: Bund 30 ans, class: rates, group: Allemagne,
+              curve: {country: DE, tenor: 30},
+              tickers: {bloomberg: GDBR30 Index, free: "stooq:30dey.b|cnbc:DE30Y-DE|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R30XX.R.A.A._Z._Z.A"}}
+  OAT_2Y:    {name: OAT 2 ans,   class: rates, group: France,
+              curve: {country: FR, tenor: 2},
+              tickers: {bloomberg: GFRN2 Index, free: "stooq:2fry.b|cnbc:FR2Y-FR"}}
+  OAT_5Y:    {name: OAT 5 ans,   class: rates, group: France,
+              curve: {country: FR, tenor: 5},
+              tickers: {bloomberg: GFRN5 Index, free: "stooq:5fry.b|cnbc:FR5Y-FR"}}
+  OAT_10Y:   {name: OAT 10 ans,  class: rates, group: France,
+              curve: {country: FR, tenor: 10},
+              tickers: {bloomberg: GFRN10 Index, free: "stooq:10fry.b|cnbc:FR10Y-FR"}}
+  OAT_30Y:   {name: OAT 30 ans,  class: rates, group: France,
+              curve: {country: FR, tenor: 30},
+              tickers: {bloomberg: GFRN30 Index, free: "stooq:30fry.b|cnbc:FR30Y-FR"}}
+  BTP_2Y:    {name: BTP 2 ans,   class: rates, group: Italie,
+              curve: {country: IT, tenor: 2},
+              tickers: {bloomberg: GBTPGR2 Index, free: "stooq:2ity.b|cnbc:IT2Y-IT"}}
+  BTP_5Y:    {name: BTP 5 ans,   class: rates, group: Italie,
+              curve: {country: IT, tenor: 5},
+              tickers: {bloomberg: GBTPGR5 Index, free: "stooq:5ity.b|cnbc:IT5Y-IT"}}
+  BTP_10Y:   {name: BTP 10 ans,  class: rates, group: Italie,
+              curve: {country: IT, tenor: 10},
+              tickers: {bloomberg: GBTPGR10 Index, free: "stooq:10ity.b|cnbc:IT10Y-IT"}}
+  BTP_30Y:   {name: BTP 30 ans,  class: rates, group: Italie,
+              curve: {country: IT, tenor: 30},
+              tickers: {bloomberg: GBTPGR30 Index, free: "stooq:30ity.b|cnbc:IT30Y-IT"}}
+  BONOS_2Y:  {name: Bonos 2 ans,  class: rates, group: Espagne,
+              curve: {country: ES, tenor: 2},
+              tickers: {bloomberg: GSPG2YR Index, free: "stooq:2esy.b|cnbc:ES2Y-ES"}}
+  BONOS_5Y:  {name: Bonos 5 ans,  class: rates, group: Espagne,
+              curve: {country: ES, tenor: 5},
+              tickers: {bloomberg: GSPG5YR Index, free: "stooq:5esy.b|cnbc:ES5Y-ES"}}
+  BONOS_10Y: {name: Bonos 10 ans, class: rates, group: Espagne,
+              curve: {country: ES, tenor: 10},
+              tickers: {bloomberg: GSPG10YR Index, free: "stooq:10esy.b|cnbc:ES10Y-ES"}}
+  BONOS_30Y: {name: Bonos 30 ans, class: rates, group: Espagne,
+              curve: {country: ES, tenor: 30},
+              tickers: {bloomberg: GSPG30YR Index, free: "stooq:30esy.b|cnbc:ES30Y-ES"}}
+  # UST : CNBC en tête, comme les taux européens (une seule source et une seule date pour toute
+  # la courbe, pentes 2s10s / 5s30s cohérentes). Replis : FRED (publié avec un jour de
+  # retard), future Micro 2Y, indices CBOE de Yahoo.
+  UST_2Y:    {name: UST 2 ans,  class: rates, group: États-Unis,
+              curve: {country: US, tenor: 2},
+              tickers: {bloomberg: USGG2YR Index, fmp: treasury:year2, free: "cnbc:US2Y|fred:DGS2|2YY=F"}}
+  UST_5Y:    {name: UST 5 ans,  class: rates, group: États-Unis,
+              curve: {country: US, tenor: 5},
+              tickers: {bloomberg: USGG5YR Index, fmp: treasury:year5, free: "cnbc:US5Y|^FVX"}}
+  UST_10Y:   {name: UST 10 ans, class: rates, group: États-Unis,
+              curve: {country: US, tenor: 10},
+              tickers: {bloomberg: USGG10YR Index, fmp: treasury:year10, free: "cnbc:US10Y|^TNX"}}
+  UST_30Y:   {name: UST 30 ans, class: rates, group: États-Unis,
+              curve: {country: US, tenor: 30},
+              tickers: {bloomberg: USGG30YR Index, fmp: treasury:year30, free: "cnbc:US30Y|^TYX"}}
+  GILT_10Y:  {name: Gilt 10 ans, class: rates, group: Royaume-Uni,
+              curve: {country: GB, tenor: 10},
+              tickers: {bloomberg: GUKG10 Index, free: "stooq:10uky.b|cnbc:GB10Y-GB"}}
+  JGB_10Y:   {name: JGB 10 ans, class: rates, group: Japon,
+              curve: {country: JP, tenor: 10},
+              tickers: {bloomberg: GJGB10 Index, free: "stooq:10jpy.b|cnbc:JP10Y-JP"}}
+  ESTR:      {name: €STR, class: rates, group: Monétaire,
+              tickers: {bloomberg: ESTRON Index, free: ecb:EST/B.EU000A2X2A25.WT}}
+
+  # Spreads et pentes (en pb), calculés à partir des rendements
+  OAT_BUND_10Y: {name: Spread OAT-Bund 10 ans, class: rates, group: Spreads souverains,
+                 quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {OAT_10Y: 1, BUND_10Y: -1}}}
+  BTP_BUND_10Y: {name: Spread BTP-Bund 10 ans, class: rates, group: Spreads souverains,
+                 quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BTP_10Y: 1, BUND_10Y: -1}}}
+  BUND_2S10S:   {name: Pente Bund 2s10s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BUND_10Y: 1, BUND_2Y: -1}}}
+  BUND_5S30S:   {name: Pente Bund 5s30s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {BUND_30Y: 1, BUND_5Y: -1}}}
+  UST_2S10S:    {name: Pente UST 2s10s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {UST_10Y: 1, UST_2Y: -1}}}
+  UST_5S30S:    {name: Pente UST 5s30s, class: rates, group: Pentes, quote: spread, unit: pb,
+                 derived: {multiplier: 100, legs: {UST_30Y: 1, UST_5Y: -1}}}
+
+  # ------------------------------------------------------------------- crédit
+  # Pas de source gratuite quotidienne pour les indices iTraxx (données Markit sous licence) :
+  # Bloomberg uniquement.
+  # Pas de source gratuite (données Markit sous licence) : hors Bloomberg, le spread
+  # de clôture est saisi à la main (vue Daily macro ou `market-monitor quote set`).
+  ITRX_MAIN:  {name: iTraxx Europe Main 5Y, class: credit, group: iTraxx 5 ans,
+               tickers: {bloomberg: ITRXEBE CBIN Curncy, manual: ITRX_MAIN}}
+  ITRX_XOVER: {name: iTraxx Crossover 5Y, class: credit, group: iTraxx 5 ans,
+               tickers: {bloomberg: ITRXEXE CBIN Curncy, manual: ITRX_XOVER}}
+
+  # Crédit cash : OAS (option-adjusted spread) des indices obligataires, en pb.
+  # Gratuit et officiel : indices ICE BofA publiés par FRED (en %, d'où scale: 100 ; quotidien,
+  # J-1, historique limité à 3 ans). Au bureau, fred.stlouisfed.org peut être bloqué : la
+  # chaîne essaie ensuite l'API FRED (autre serveur, clé gratuite FRED_API_KEY dans .env),
+  # puis la saisie manuelle. Bloomberg reste prioritaire (indices Bloomberg, tickers à
+  # vérifier : leurs niveaux diffèrent de quelques pb des indices ICE).
+  # Euro IG : aucune source gratuite fiable (ICE, iBoxx et Bloomberg sont sous licence ;
+  # FRED ne publie que l'Euro High Yield) -> Bloomberg, sinon saisie manuelle.
+  US_HY_OAS:  {name: OAS US High Yield, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LF98OAS Index, manual: US_HY_OAS,
+                         free: {ticker: "fred:BAMLH0A0HYM2|fredapi:BAMLH0A0HYM2", scale: 100}}}
+  US_IG_OAS:  {name: OAS US Investment Grade, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LUACOAS Index, manual: US_IG_OAS,
+                         free: {ticker: "fred:BAMLC0A0CM|fredapi:BAMLC0A0CM", scale: 100}}}
+  EUR_HY_OAS: {name: OAS Euro High Yield, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LP01OAS Index, manual: EUR_HY_OAS,
+                         free: {ticker: "fred:BAMLHE00EHYIOAS|fredapi:BAMLHE00EHYIOAS", scale: 100}}}
+  EUR_IG_OAS: {name: OAS Euro Investment Grade, class: credit, group: Crédit cash,
+               tickers: {bloomberg: LECPOAS Index, manual: EUR_IG_OAS}}
+  # Rendement de l'indice Euro Corporate IG (en %) : jambe du G spread, même contrainte de source.
+  EUR_IG_YLD: {name: Rendement Euro Corporate IG, class: rates, group: Crédit cash,
+               tickers: {bloomberg: LECPYW Index, manual: EUR_IG_YLD}}
+
+  HY_IG_US:   {name: Spread HY-IG US, class: credit, group: Crédit cash,
+               derived: {legs: {US_HY_OAS: 1, US_IG_OAS: -1}}}
+  HY_IG_EUR:  {name: Spread HY-IG Euro, class: credit, group: Crédit cash,
+               derived: {legs: {EUR_HY_OAS: 1, EUR_IG_OAS: -1}}}
+  # G spread : rendement Euro IG moins Bund de maturité comparable (duration de l'indice
+  # ~4,5 ans -> Bund 5 ans), en pb.
+  G_SPREAD_EUR_IG: {name: G spread Euro IG / Bund, class: credit, group: Crédit cash,
+                    derived: {multiplier: 100, legs: {EUR_IG_YLD: 1, BUND_5Y: -1}}}
+
+  # ---------------------------------------------------------------------- FX
+  EURUSD: {name: EUR/USD, class: fx, group: Change,
+           tickers: {bloomberg: EURUSD Curncy, fmp: EURUSD, free: EURUSD=X}}
+  EURGBP: {name: EUR/GBP, class: fx, group: Change,
+           tickers: {bloomberg: EURGBP Curncy, fmp: EURGBP, free: EURGBP=X}}
+  EURCHF: {name: EUR/CHF, class: fx, group: Change,
+           tickers: {bloomberg: EURCHF Curncy, fmp: EURCHF, free: EURCHF=X}}
+  USDJPY: {name: USD/JPY, class: fx, group: Change,
+           tickers: {bloomberg: USDJPY Curncy, fmp: USDJPY, free: JPY=X}}
+  DXY:    {name: Dollar Index, class: fx, group: Change, unit: pts,
+           tickers: {bloomberg: DXY Curncy, free: DX-Y.NYB}}
+
+  # ------------------------------------------------------- matières premières
+  # Génériques front-month : sauts possibles aux dates de roll.
+  # Brent : contrat le plus traité, comme Investing et la presse - le suivant est coté dès
+  # 5 jours ouvrés avant l'échéance du premier (roll_ahead). Le générique BZ=F / BZUSD garde
+  # le contrat qui expire jusqu'au dernier jour (29/10/2026 : décembre 115,32 $, janvier
+  # 111,64 $) : FMP n'est plus utilisé pour cette ligne, BZ=F reste en secours.
+  BRENT:  {name: Brent, class: commodities, group: Énergie, unit: USD/bbl, roll: brent, roll_ahead: 5,
+           tickers: {bloomberg: CO1 Comdty, free: "fut:brent/BZ=F/BZ{code}{yy}.NYM/5|BZ=F"}}
+  WTI:    {name: WTI, class: commodities, group: Énergie, unit: USD/bbl, roll: wti,
+           tickers: {bloomberg: CL1 Comdty, fmp: CLUSD, free: CL=F}}
+  TTF:    {name: Gaz TTF (front month), class: commodities, group: Énergie, unit: EUR/MWh, roll: ttf,
+           tickers: {bloomberg: TTFG1MON OECM Index, free: TTF=F}}   # à vérifier
+  GOLD:   {name: Or, class: commodities, group: Métaux, unit: USD/oz,
+           tickers: {bloomberg: XAU Curncy,
+                     fmp: {ticker: GCUSD, proxy: future front-month (spot sur Bloomberg)},
+                     free: {ticker: GC=F, proxy: future front-month (spot sur Bloomberg)}}}
+  COPPER: {name: Cuivre (COMEX), class: commodities, group: Métaux, unit: USD/lb,
+           tickers: {bloomberg: HG1 Comdty, fmp: HGUSD, free: HG=F}}
+
+  # -------------------------------------------------------------- volatilité
+  VIX:  {name: VIX, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: VIX Index, fmp: ^VIX, free: ^VIX}}
+  V2X:  {name: VSTOXX, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: V2X Index, free: "stoxx:v2tx"}}   # fichier historique STOXX, à vérifier
+  MOVE: {name: MOVE, class: volatility, group: Volatilité implicite,
+         tickers: {bloomberg: MOVE Index, free: ^MOVE}}
+
+  # ------------------------------------------------------------------ crypto
+  BTC: {name: Bitcoin, class: crypto, group: Crypto,
+        tickers: {bloomberg: XBTUSD Curncy, fmp: BTCUSD, free: BTC-USD}}
+  ETH: {name: Ether, class: crypto, group: Crypto,
+        tickers: {bloomberg: XETUSD Curncy, fmp: ETHUSD, free: ETH-USD}}

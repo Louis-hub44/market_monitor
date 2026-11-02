@@ -1,0 +1,16 @@
+# Thème natif de Streamlit (grilles, menus, champs). Il est accordé sur la
+# palette sombre de `config/theme.py` : les deux doivent rester cohérents.
+# Pour travailler en clair par défaut, reprendre les valeurs de LIGHT.
+[theme]
+base = "dark"
+primaryColor = "#4F9BD8"
+backgroundColor = "#0F1319"
+secondaryBackgroundColor = "#161C24"
+textColor = "#E9EEF4"
+font = "sans serif"
+
+[server]
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false

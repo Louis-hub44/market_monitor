@@ -1,0 +1,51 @@
+index: CAC
+name: CAC 40
+group: core
+currency: EUR
+as_of: null
+source: 'liste de départ (fin 2025), à vérifier ; poids : market-monitor constituents refresh'
+weights: marketcap
+refresh:
+  kind: manual
+  check: https://live.euronext.com/fr/product/indices/FR0003500008-XPAR
+members:
+  - {ticker: AC.PA, name: Accor, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: AC.PA}
+  - {ticker: AI.PA, name: Air Liquide, sector: Matériaux, mic: XPAR, currency: EUR, fmp: AI.PA}
+  - {ticker: AIR.PA, name: Airbus, sector: Industrie, mic: XPAR, currency: EUR, fmp: AIR.PA}
+  - {ticker: MT.AS, name: ArcelorMittal, sector: Matériaux, mic: XAMS, currency: EUR, fmp: MT.AS}
+  - {ticker: CS.PA, name: AXA, sector: Finance, mic: XPAR, currency: EUR, fmp: CS.PA}
+  - {ticker: BNP.PA, name: BNP Paribas, sector: Finance, mic: XPAR, currency: EUR, fmp: BNP.PA}
+  - {ticker: EN.PA, name: Bouygues, sector: Industrie, mic: XPAR, currency: EUR, fmp: EN.PA}
+  - {ticker: BVI.PA, name: Bureau Veritas, sector: Industrie, mic: XPAR, currency: EUR, fmp: BVI.PA}
+  - {ticker: CAP.PA, name: Capgemini, sector: Technologie, mic: XPAR, currency: EUR, fmp: CAP.PA}
+  - {ticker: CA.PA, name: Carrefour, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: CA.PA}
+  - {ticker: ACA.PA, name: Crédit Agricole, sector: Finance, mic: XPAR, currency: EUR, fmp: ACA.PA}
+  - {ticker: BN.PA, name: Danone, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: BN.PA}
+  - {ticker: DSY.PA, name: Dassault Systèmes, sector: Technologie, mic: XPAR, currency: EUR, fmp: DSY.PA}
+  - {ticker: EDEN.PA, name: Edenred, sector: Finance, mic: XPAR, currency: EUR, fmp: EDEN.PA}
+  - {ticker: ENGI.PA, name: Engie, sector: Services aux collectivités, mic: XPAR, currency: EUR, fmp: ENGI.PA}
+  - {ticker: EL.PA, name: EssilorLuxottica, sector: Santé, mic: XPAR, currency: EUR, fmp: EL.PA}
+  - {ticker: ERF.PA, name: Eurofins Scientific, sector: Santé, mic: XPAR, currency: EUR, fmp: ERF.PA}
+  - {ticker: RMS.PA, name: Hermès, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: RMS.PA}
+  - {ticker: KER.PA, name: Kering, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: KER.PA}
+  - {ticker: OR.PA, name: L'Oréal, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: OR.PA}
+  - {ticker: LR.PA, name: Legrand, sector: Industrie, mic: XPAR, currency: EUR, fmp: LR.PA}
+  - {ticker: MC.PA, name: LVMH, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: MC.PA}
+  - {ticker: ML.PA, name: Michelin, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: ML.PA}
+  - {ticker: ORA.PA, name: Orange, sector: Communication, mic: XPAR, currency: EUR, fmp: ORA.PA}
+  - {ticker: RI.PA, name: Pernod Ricard, sector: Consommation de base, mic: XPAR, currency: EUR, fmp: RI.PA}
+  - {ticker: PUB.PA, name: Publicis, sector: Communication, mic: XPAR, currency: EUR, fmp: PUB.PA}
+  - {ticker: RNO.PA, name: Renault, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: RNO.PA}
+  - {ticker: SAF.PA, name: Safran, sector: Industrie, mic: XPAR, currency: EUR, fmp: SAF.PA}
+  - {ticker: SGO.PA, name: Saint-Gobain, sector: Industrie, mic: XPAR, currency: EUR, fmp: SGO.PA}
+  - {ticker: SAN.PA, name: Sanofi, sector: Santé, mic: XPAR, currency: EUR, fmp: SAN.PA}
+  - {ticker: SU.PA, name: Schneider Electric, sector: Industrie, mic: XPAR, currency: EUR, fmp: SU.PA}
+  - {ticker: GLE.PA, name: Société Générale, sector: Finance, mic: XPAR, currency: EUR, fmp: GLE.PA}
+  - {ticker: STLAP.PA, name: Stellantis, sector: Consommation discrétionnaire, mic: XPAR, currency: EUR, fmp: STLAP.PA}
+  - {ticker: STMPA.PA, name: STMicroelectronics, sector: Technologie, mic: XPAR, currency: EUR, fmp: STMPA.PA}
+  - {ticker: TEP.PA, name: Teleperformance, sector: Industrie, mic: XPAR, currency: EUR, fmp: TEP.PA}
+  - {ticker: HO.PA, name: Thales, sector: Industrie, mic: XPAR, currency: EUR, fmp: HO.PA}
+  - {ticker: TTE.PA, name: TotalEnergies, sector: Énergie, mic: XPAR, currency: EUR, fmp: TTE.PA}
+  - {ticker: URW.PA, name: Unibail-Rodamco-Westfield, sector: Immobilier, mic: XPAR, currency: EUR, fmp: URW.PA}
+  - {ticker: VIE.PA, name: Veolia, sector: Services aux collectivités, mic: XPAR, currency: EUR, fmp: VIE.PA}
+  - {ticker: DG.PA, name: Vinci, sector: Industrie, mic: XPAR, currency: EUR, fmp: DG.PA}

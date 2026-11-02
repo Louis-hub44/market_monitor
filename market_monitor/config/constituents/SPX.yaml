@@ -1,0 +1,13 @@
+index: SPX
+name: S&P 500
+group: core
+currency: USD
+as_of: null
+source: 'à charger : market-monitor constituents refresh --index SPX'
+weights: holdings
+refresh:
+  kind: ishares
+  url: https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund
+  fallback: wikipedia             # si le fichier iShares est inaccessible : liste Wikipedia
+  wikipedia_url: https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
+members:

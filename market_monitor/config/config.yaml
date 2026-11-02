@@ -1,0 +1,93 @@
+# Market Monitor - configuration (aucun secret ici : la clé FMP est dans .env)
+
+providers:
+  # Ordre de priorité = chaîne de fallback, instrument par instrument.
+  # Surchargeable par la variable d'environnement MARKET_MONITOR_PROVIDERS.
+  # « manual » (cotations saisies à la main) est toujours ajouté en dernier.
+  priority: [bloomberg, fmp, free, manual]
+
+  bloomberg:            # Desktop API (Terminal ouvert et loggé)
+    host: localhost
+    port: 8194
+    timeout_ms: 30000
+
+  fmp:
+    base_url: https://financialmodelingprep.com/stable
+    timeout_s: 15
+    max_retries: 3
+
+  free:
+    ecb_base_url: https://data-api.ecb.europa.eu/service/data
+    timeout_s: 20
+
+  manual:               # cotations saisies à la main (iTraxx sans Bloomberg...)
+    file: ../data/manual_quotes.csv
+
+network:
+  # Proxy d'inspection SSL d'entreprise (Zscaler, Netskope...) : « certificate verify
+  # failed » sur toutes les sources. Appliqué à FMP, BCE et Yahoo (yfinance).
+  # Surchargeable par MARKET_MONITOR_CA_BUNDLE / MARKET_MONITOR_INSECURE_SSL.
+  ca_bundle:                         # certificat racine de l'entreprise (PEM) - solution sûre
+  insecure_ssl: false                # true = vérification SSL désactivée : réseau de confiance uniquement
+
+cache:
+  enabled: true
+  directory: ../.cache/market_data   # relatif à ce fichier
+  intraday_ttl_minutes: 15           # durée de vie des points "du jour" (provisoires)
+  refresh_lookback_days: 5           # jours recalés à chaque rafraîchissement (révisions, prints tardifs)
+  tranche_days: 1830                 # historique long (fiche instrument, « Max ») chargé par tranches de 5 ans,
+                                     # de la plus récente à la plus ancienne ; arrêt dès qu'une tranche est vide
+
+market:
+  timezone: Europe/Paris
+
+logging:
+  level: INFO                     # DEBUG | INFO | WARNING | ERROR
+  file: ../logs/market_monitor.log  # journal tournant (1 Mo x 5), utile en tâche planifiée
+
+referential:                      # chemins relatifs à ce fichier
+  instruments: instruments.yaml
+  watchlists: watchlists.yaml
+
+analytics:
+  zscore_window: 252              # variations quotidiennes servant à estimer mu et sigma (~1 an)
+  zscore_min_obs: 60              # en dessous : z-score = NaN
+  zscore_demean: true             # false -> mu = 0 (mouvement exprimé en sigmas)
+  stale_bdays: 2                  # dernier print plus vieux (jours ouvrés) -> ligne "stale"
+  max_reference_gap_days: 7       # print de référence trop éloigné de sa date cible -> NaN
+
+quality:                          # garde-fous avant publication (export daily macro)
+  suspect_abs_z: 8.0              # |z 1J| au-delà : donnée suspecte, à vérifier (pas un mouvement)
+  cross_check: true               # lignes publiées comparées à une seconde source
+  cross_check_max_dev_z: 4.0      # écart de 1J entre sources, en écarts-types quotidiens
+  cross_check_level_tol_pct: 5.0  # écart de niveau toléré pour les prix et la vol (%)
+  cross_check_level_tol_bp: 25.0  # écart de niveau toléré pour les taux et spreads (pb)
+  cross_check_quote_tol_bp: 1.5   # deux cotations du même emprunt de référence (Stooq / CNBC), pb
+
+equities:                         # titres des indices (top movers, largeur de marché)
+  constituents: constituents      # compositions : config/constituents/<INDICE>.yaml
+  directory: ../.cache/equities   # cours des titres (un parquet par champ)
+  chunk_size: 40                  # titres par téléchargement Yahoo
+  pause_s: 2.0                    # pause entre deux téléchargements (limite de requêtes Yahoo)
+  history_days: 400               # premier chargement : MM200, 52 semaines, volume moyen 20 j
+  lookback_days: 7                # chaque rafraîchissement redemande la dernière semaine
+  max_abs_return_pct: 25          # au-delà : « À vérifier » (split, erreur de cotation), jamais un mover
+
+ui:
+  default_watchlist: home
+  cache_ttl_minutes: 5            # cache des calculs côté Streamlit (mode auto ; 0 = pas de cache)
+  refresh: manual                 # manual : les sources ne sont réinterrogées qu'au bouton « Actualiser
+                                  # les données » (changer de vue ne consomme pas d'appels FMP) ;
+                                  # auto : rechargement après cache_ttl_minutes / cache.intraday_ttl_minutes
+  heatmap_columns: 8              # tuiles par ligne
+  zscore_clip: 3.0                # saturation des couleurs à |z| = 3
+  top_movers: 6                   # nombre de mouvements marquants affichés
+  network_gate: true              # écran de connexion (SSL) avant tout chargement ; false = chargement direct
+  default_view: seance            # vue d'ouverture : seance (la séance d'hier), overview, movers, curves…
+
+export:                           # chemins relatifs à ce fichier
+  layout: daily_macro.yaml        # bandeaux, colonnes, règles des mouvements marquants
+  output_dir: ../exports          # dossier des fichiers Excel / PNG / texte
+
+alerts:
+  rules: alerts.yaml              # règles d'alerte (seuils, z-scores, données périmées)

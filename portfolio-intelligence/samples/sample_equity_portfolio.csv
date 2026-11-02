@@ -1,0 +1,22 @@
+ticker,name,asset class,weight,currency,sector,country
+ASML.AS,ASML Holding,Equity,0.062,EUR,Technology,NL
+SAP.DE,SAP SE,Equity,0.058,EUR,Technology,DE
+MC.PA,LVMH,Equity,0.051,EUR,Consumer Cyclical,FR
+TTE.PA,TotalEnergies,Equity,0.047,EUR,Energy,FR
+SAN.PA,Sanofi,Equity,0.042,EUR,Healthcare,FR
+AIR.PA,Airbus,Equity,0.041,EUR,Industrials,FR
+BNP.PA,BNP Paribas,Equity,0.038,EUR,Financial Services,FR
+SIE.DE,Siemens,Equity,0.037,EUR,Industrials,DE
+NESN.SW,Nestle,Equity,0.036,CHF,Consumer Defensive,CH
+AZN.L,AstraZeneca,Equity,0.034,GBP,Healthcare,GB
+MSFT,Microsoft,Equity,0.085,USD,Technology,US
+AAPL,Apple,Equity,0.072,USD,Technology,US
+JPM,JPMorgan Chase,Equity,0.055,USD,Financial Services,US
+XOM,Exxon Mobil,Equity,0.048,USD,Energy,US
+UNH,UnitedHealth,Equity,0.044,USD,Healthcare,US
+PG,Procter & Gamble,Equity,0.039,USD,Consumer Defensive,US
+CAT,Caterpillar,Equity,0.036,USD,Industrials,US
+NEE,NextEra Energy,Equity,0.033,USD,Utilities,US
+LIN,Linde,Equity,0.031,USD,Basic Materials,US
+V,Visa,Equity,0.030,USD,Financial Services,US
+CASH.EUR,Cash EUR,Cash,0.081,EUR,,

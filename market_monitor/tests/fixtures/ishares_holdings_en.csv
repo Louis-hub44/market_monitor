@@ -1,0 +1,11 @@
+iShares STOXX Europe 600 UCITS ETF (DE)
+Fund Holdings as of,"Oct 23, 2026"
+Inception Date,"Feb 13, 2004"
+ 
+Ticker,Name,Sector,Asset Class,Market Value,Weight (%),Notional Value,Shares,Price,Location,Exchange,Currency,FX Rate,Market Currency,Accrual Date
+"ASML","ASML HOLDING NV","Information Technology","Equity","1,234,567.00","2.85","1,234,567.00","1,000","650.10","Netherlands","Euronext Amsterdam","EUR","1.00","EUR","-"
+"NOVO B","NOVO NORDISK CLASS B","Health Care","Equity","900,000.00","2.10","900,000.00","10,000","500.00","Denmark","Omx Nordic Exchange Copenhagen A/S","DKK","7.46","DKK","-"
+"RR.","ROLLS-ROYCE HOLDINGS PLC","Industrials","Equity","500,000.00","1.20","500,000.00","50,000","10.00","United Kingdom","London Stock Exchange","GBP","0.87","GBP","-"
+"MC","LVMH","Consumer Discretionary","Equity","800,000.00","1.90","800,000.00","1,000","600.00","France","Nyse Euronext - Euronext Paris","EUR","1.00","EUR","-"
+"XYZ","MYSTERY CORP","Financials","Equity","1.00","0.01","1.00","1","1.00","Narnia","Narnia Exchange","EUR","1.00","EUR","-"
+"EUR","EUR CASH","Cash and/or Derivatives","Cash","10,000.00","0.05","10,000.00","10,000","1.00","European Union","-","EUR","1.00","EUR","-"

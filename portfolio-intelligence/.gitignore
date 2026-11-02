@@ -1,0 +1,13 @@
+.env
+.local_config.json
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+*.xlsx
+*.csv
+!samples/*.csv
+config/assumptions.local.json

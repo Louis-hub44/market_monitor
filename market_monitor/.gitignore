@@ -1,0 +1,11 @@
+.env
+.cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+.idea/
+exports/
+logs/
+data/manual_quotes.csv

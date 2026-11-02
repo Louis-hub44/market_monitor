@@ -1,0 +1,26 @@
+name: portfolio_intelligence
+
+on:
+  push:
+    paths: ['portfolio-intelligence/**', '.github/workflows/portfolio_intelligence.yml']
+  pull_request:
+    paths: ['portfolio-intelligence/**', '.github/workflows/portfolio_intelligence.yml']
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: portfolio-intelligence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements.txt
+      - run: pytest

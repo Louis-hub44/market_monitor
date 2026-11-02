@@ -1,0 +1,362 @@
+"""Command line interface.
+
+    market-monitor doctor [--online]                 # vérifie l'installation
+    market-monitor ui                                # lance le dashboard Streamlit
+    market-monitor perf --watchlist daily_macro [--as-of 2026-10-02]
+    market-monitor daily-macro [--as-of 2026-10-02] [--out exports]
+    market-monitor alerts [--as-of ...] [--json alerts.json] [--fail-on critical]
+    market-monitor fetch --provider free --tickers ^STOXX50E --start 2026-01-01
+    market-monitor snapshot --provider fmp --tickers ^GSPC EURUSD
+    market-monitor check-referential
+    market-monitor cache-clear [--provider fmp]
+    market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"   # cherche des séries BCE
+    market-monitor diagnostic-taux [--contourner-ssl]  # teste Bundesbank, CNBC, BCE (réponses brutes)
+    market-monitor quote set ITRX_XOVER 287.5 [--date 2026-10-06]   # saisie manuelle
+    market-monitor quote list [ITRX_MAIN] | quote import histo.csv | quote delete ID DATE
+    market-monitor depth SX5E BUND_10Y [--load --start 1990-01-01]   # profondeur d'historique
+    market-monitor constituents list | refresh [--index CAC] | import FICHIER --index SX5E | check
+    market-monitor equities refresh [--avec-stoxx600] | status     # cours des titres des indices
+
+Exit codes: 0 OK, 1 data missing, 2 configuration / usage error, 3 alert threshold hit.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import date, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from market_monitor.alerts import AlertRule, Severity, load_rules
+from market_monitor.config import (
+    KNOWN_PROVIDERS,
+    MANUAL_PROVIDER,
+    PROJECT_ROOT,
+    NetworkSettings,
+    Settings,
+    configure_logging,
+    load_settings,
+)
+from market_monitor.data.cache import ParquetCache
+from market_monitor.data.factory import build_provider, rest_session, with_cache
+from market_monitor.data.models import to_date
+from market_monitor.data.providers.free import ECBClient
+from market_monitor.data.providers.manual import previous_business_day
+from market_monitor.diagnostics import rate_sources_report, review_report, source_comparison_report
+from market_monitor.doctor import run_checks
+from market_monitor.equities import cli as equity_cli
+from market_monitor.exceptions import InvalidRequestError, MarketMonitorError
+from market_monitor.export import export_daily_macro, load_layout
+from market_monitor.export.text import alert_lines
+from market_monitor.monitor import MAX_HISTORY_START, MarketMonitor, PerformanceReport
+from market_monitor.network import describe
+from market_monitor.referential import load_referential
+
+EXIT_OK, EXIT_MISSING_DATA, EXIT_ERROR, EXIT_ALERT = 0, 1, 2, 3
+Command = Callable[[Settings, argparse.Namespace], int]
+
+
+# ===================================================================== parser
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="market-monitor", description="Market Monitor")
+    parser.add_argument("--config", help="path to config.yaml")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor", help="check the installation").add_argument(
+        "--online", action="store_true", help="also fetch one ticker per provider")
+    sub.add_parser("ui", help="launch the Streamlit dashboard")
+    sub.add_parser("check-referential", help="validate the YAML referential")
+    perf = sub.add_parser("perf", help="performance table in the console")
+    perf.add_argument("--watchlist", default="home")
+    perf.add_argument("--as-of", default=None)
+    daily = sub.add_parser("daily-macro", help="write the Excel / PNG / text export")
+    daily.add_argument("--as-of", default=None)
+    daily.add_argument("--out", default=None, help="output folder (default: export.output_dir)")
+    alerts = sub.add_parser("alerts", help="evaluate the alert rules")
+    alerts.add_argument("--as-of", default=None)
+    alerts.add_argument("--json", default=None, help="write the alerts to this JSON file")
+    alerts.add_argument("--fail-on", choices=["warning", "critical"], default=None,
+                        help=f"exit code {EXIT_ALERT} if an alert of this severity or above fires")
+    for name in ("fetch", "snapshot"):
+        cmd = sub.add_parser(name, help=f"raw {name} from one provider")
+        cmd.add_argument("--provider", choices=KNOWN_PROVIDERS, required=True)
+        cmd.add_argument("--tickers", nargs="+", required=True, help="native tickers")
+    fetch = sub.choices["fetch"]
+    fetch.add_argument("--start", default=(date.today() - timedelta(days=30)).isoformat())
+    fetch.add_argument("--end", default=date.today().isoformat())
+    fetch.add_argument("--no-cache", action="store_true")
+    diag = sub.add_parser("diagnostic-taux", help="test the sovereign-rate sources (raw answers)")
+    diag.add_argument("--contourner-ssl", action="store_true",
+                      help="disable SSL verification (corporate proxy, trusted network only)")
+    ecb = sub.add_parser("ecb-series", help="list ECB series matching a key pattern")
+    ecb.add_argument("flow", help="dataflow, e.g. FM, YC, IRS")
+    ecb.add_argument("pattern", help="key with wildcards, e.g. D.DE+FR+IT+ES....YLD")
+    depth = sub.add_parser("depth", help="history depth held in the cache, per source")
+    depth.add_argument("ids", nargs="*", help="instrument ids or selectors (default: watchlist)")
+    depth.add_argument("--watchlist", default="home")
+    depth.add_argument("--load", action="store_true",
+                       help="download the bars from --start first (long windows in tranches)")
+    depth.add_argument("--start", default=None, help="with --load (default: 1990-01-01, i.e. Max)")
+    clear = sub.add_parser("cache-clear", help="delete the local parquet cache")
+    clear.add_argument("--provider", choices=KNOWN_PROVIDERS)
+    _quote_parser(sub)
+    equity_cli.add_parsers(sub)
+    return parser
+
+
+def _quote_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    quote = sub.add_parser("quote", help="manual quotes (iTraxx without Bloomberg...)")
+    actions = quote.add_subparsers(dest="action", required=True)
+    put = actions.add_parser("set", help="enter one closing level")
+    put.add_argument("instrument", help="instrument id, e.g. ITRX_XOVER")
+    put.add_argument("value", help="level in the instrument unit (bp for iTraxx); 287,5 accepted")
+    put.add_argument("--date", default=None, help="close date (default: previous business day)")
+    listing = actions.add_parser("list", help="show the last entries")
+    listing.add_argument("instrument", nargs="?", default=None)
+    listing.add_argument("--last", type=int, default=10)
+    imp = actions.add_parser("import", help="merge a CSV history (date,ticker,value or date,<id>...)")
+    imp.add_argument("file")
+    rm = actions.add_parser("delete", help="delete one entry")
+    rm.add_argument("instrument")
+    rm.add_argument("date")
+
+
+# =================================================================== commands
+def _doctor(settings: Settings, args: argparse.Namespace) -> int:
+    checks = run_checks(settings, online=args.online)
+    for check in checks:
+        print(f"[{'OK' if check.ok else '!!'}] {check.name} : {check.detail}")
+    # manual quotes are always "available": they do not prove a market data source works
+    providers_ok = any(c.ok for c in checks
+                       if c.name.startswith("Provider") and c.name != f"Provider {MANUAL_PROVIDER}")
+    config_ok = all(c.ok for c in checks if not c.name.startswith("Provider"))
+    return EXIT_OK if providers_ok and config_ok else EXIT_ERROR
+
+
+def _check_referential(settings: Settings, args: argparse.Namespace) -> int:
+    ref = load_referential(settings.instruments_path, settings.watchlists_path)
+    print(f"OK: {len(ref)} instruments, watchlists {list(ref.watchlist_names)}")
+    return EXIT_OK
+
+
+def _perf(settings: Settings, args: argparse.Namespace) -> int:
+    report = MarketMonitor.from_settings(settings).performance(args.watchlist, args.as_of)
+    _print_perf(report)
+    return EXIT_MISSING_DATA if report.errors else EXIT_OK
+
+
+def _daily_macro(settings: Settings, args: argparse.Namespace) -> int:
+    monitor = MarketMonitor.from_settings(settings)
+    layout = load_layout(settings.daily_macro_path, monitor.referential)
+    equities = equity_cli.universe(settings) if layout.stocks.enabled else None
+    result = export_daily_macro(monitor, layout, args.out or settings.export_dir, args.as_of,
+                                _rules_if_any(settings, monitor), equities=equities)
+    print(result.text.read_text(encoding="utf-8"))
+    files = [result.excel, result.png, result.text,
+             *(f for f in (result.charts, result.curves) if f is not None)]
+    print("Fichiers : " + ", ".join(str(f) for f in files))
+    return EXIT_OK
+
+
+def _alerts(settings: Settings, args: argparse.Namespace) -> int:
+    monitor = MarketMonitor.from_settings(settings)
+    report = monitor.alerts(load_rules(settings.alerts_path, monitor.referential), args.as_of)
+    print("\n".join(alert_lines(report)))
+    if args.json:
+        frame = report.frame()
+        frame["level_date"] = frame["level_date"].astype(str)
+        Path(args.json).write_text(frame.to_json(orient="records", force_ascii=False, indent=2),
+                                   encoding="utf-8")
+    worst = report.max_severity
+    if args.fail_on and worst is not None and worst.rank >= Severity(args.fail_on).rank:
+        return EXIT_ALERT
+    return EXIT_OK
+
+
+def _raw(settings: Settings, args: argparse.Namespace) -> int:
+    provider = build_provider(args.provider, settings)
+    if args.command == "fetch":
+        if not args.no_cache:
+            provider = with_cache(provider, settings)
+        history = provider.get_history(args.tickers, args.start, args.end)
+        with pd.option_context("display.width", 160, "display.max_columns", 20):
+            print(history.data.tail(10))
+        errors, warnings = history.errors, history.warnings
+    else:
+        snapshot = provider.get_snapshot(args.tickers)
+        print(snapshot.data)
+        errors, warnings = snapshot.errors, snapshot.warnings
+    for label, issues in (("ERROR", errors), ("WARNING", warnings)):
+        for ticker, message in issues.items():
+            print(f"{label} {ticker}: {message}", file=sys.stderr)
+    return EXIT_MISSING_DATA if errors else EXIT_OK
+
+
+def _cache_clear(settings: Settings, args: argparse.Namespace) -> int:
+    ParquetCache(settings.cache.directory).clear(args.provider)
+    print(f"cache cleared: {settings.cache.directory}")
+    return EXIT_OK
+
+
+def _ecb_series(settings: Settings, args: argparse.Namespace) -> int:
+    client = ECBClient(settings.free.ecb_base_url, timeout_s=settings.free.timeout_s,
+                       session=rest_session(settings))
+    found = client.search(args.flow, args.pattern)
+    if found.empty:
+        print("aucune série")
+        return EXIT_MISSING_DATA
+    for _, row in found.iterrows():
+        title = f"  {row['TITLE']}" if "TITLE" in row and pd.notna(row["TITLE"]) else ""
+        print(f"ecb:{args.flow}/{str(row['KEY']).split('.', 1)[1]}  "
+              f"{row.get('TIME_PERIOD', '')} = {row.get('OBS_VALUE', '')}{title}")
+    return EXIT_OK
+
+
+def _diagnostic_taux(settings: Settings, args: argparse.Namespace) -> int:
+    if args.contourner_ssl:
+        settings = replace(settings, network=NetworkSettings(insecure_ssl=True))
+    print(f"Connexion : {describe(settings.network.insecure_ssl, settings.network.ca_bundle)}")
+    session = rest_session(settings)
+    for line in source_comparison_report(session, date.today()):
+        print(line)
+    for line in rate_sources_report(session, date.today(), settings.free.ecb_base_url):
+        print(line)
+    for line in review_report(MarketMonitor.from_settings(settings), date.today(), session):
+        print(line)
+    return EXIT_OK
+
+
+def _quote(settings: Settings, args: argparse.Namespace) -> int:
+    monitor = MarketMonitor.from_settings(settings)
+    store = monitor.manual_quotes()
+    if store is None:
+        print("error: provider 'manual' absent from providers.priority", file=sys.stderr)
+        return EXIT_ERROR
+    allowed = monitor.manual_ids()
+    if args.action == "import":
+        count = store.import_csv(Path(args.file).read_text(encoding="utf-8-sig"))
+        print(f"{count} cotation(s) importée(s) dans {store.path}")
+        return EXIT_OK
+    instrument = getattr(args, "instrument", None)
+    if instrument and instrument not in allowed:
+        print(f"error: {instrument} has no 'manual' ticker (saisissables : {', '.join(allowed)})",
+              file=sys.stderr)
+        return EXIT_ERROR
+    ticker = monitor.referential.get(instrument).tickers["manual"].ticker if instrument else ""
+    if args.action == "set":
+        day = to_date(args.date) if args.date else previous_business_day()
+        store.set(ticker, day, parse_number(args.value))
+        print(f"{instrument} {day:%d/%m/%Y} = {args.value} -> {store.path}")
+    elif args.action == "delete":
+        found = store.delete(ticker, args.date)
+        print("supprimé" if found else "aucune saisie à cette date")
+        return EXIT_OK if found else EXIT_MISSING_DATA
+    else:
+        frame = store.frame()
+        if ticker:
+            frame = frame[frame["ticker"] == ticker]
+        rows = frame.groupby("ticker").tail(args.last)
+        print(rows.to_string(index=False) if not rows.empty else "aucune saisie")
+    return EXIT_OK
+
+
+def parse_number(text: str) -> float:
+    """``"287,5"`` / ``"1 742.9"`` -> float (French input accepted)."""
+    try:
+        return float(text.replace("\u202f", "").replace(" ", "").replace(",", "."))
+    except ValueError as exc:
+        raise InvalidRequestError(f"not a number: {text!r}") from exc
+
+
+def _depth(settings: Settings, args: argparse.Namespace) -> int:
+    monitor = MarketMonitor.from_settings(settings)
+    ref = monitor.referential
+    ids = (ref.resolve(args.ids, context="depth") if args.ids
+           else ref.watchlist(args.watchlist).instruments)
+    ids = monitor.available(ids)
+    if args.load:
+        loaded = monitor.bars(ids, args.start or MAX_HISTORY_START)
+        for instrument_id, message in loaded.errors.items():
+            print(f"ERROR {instrument_id}: {message}", file=sys.stderr)
+    table = monitor.depth(ids)
+    if table.empty:
+        print("aucun historique en cache (lancer avec --load)")
+        return EXIT_MISSING_DATA
+    table = table.assign(
+        reached=table["depth_reached"].map({True: "oui", False: "non"}),
+        ohlc=(100 * table["ohlc_share"]).round().astype(int).astype(str) + " %",
+    )
+    columns = {"id": "Instrument", "provider": "Provider", "source": "Source",
+               "loaded_from": "Chargé depuis", "first": "1re donnée", "last": "Dernière",
+               "observations": "Obs.", "reached": "Max atteint", "ohlc": "OHLC"}
+    with pd.option_context("display.width", 200, "display.max_columns", 20, "display.max_rows", 500):
+        print(table[list(columns)].rename(columns=columns).to_string(index=False))
+    return EXIT_OK
+
+
+COMMANDS: dict[str, Command] = {
+    "doctor": _doctor, "check-referential": _check_referential, "perf": _perf,
+    "daily-macro": _daily_macro, "alerts": _alerts, "fetch": _raw, "snapshot": _raw,
+    "cache-clear": _cache_clear, "ecb-series": _ecb_series,
+    "diagnostic-taux": _diagnostic_taux, "quote": _quote, "depth": _depth,
+    "constituents": equity_cli.run, "equities": equity_cli.run,
+}
+
+
+# ===================================================================== helpers
+def _print_perf(report: PerformanceReport) -> None:
+    columns = ["name", "level", "level_date", "chg_1d", "chg_1w", "chg_mtd", "chg_ytd",
+               "z_1d", "change_unit", "source"]
+    print(f"Market Monitor - as of {report.as_of}")
+    with pd.option_context("display.width", 200, "display.max_columns", 20,
+                           "display.float_format", "{:,.2f}".format):
+        for asset_class, table in report.by_asset_class().items():
+            print(f"\n== {asset_class.value.upper()} ==")
+            print(table[columns].to_string())
+    for label, issues in (("ERROR", report.errors), ("WARNING", report.warnings)):
+        for key, message in issues.items():
+            print(f"{label} {key}: {message}", file=sys.stderr)
+
+
+def _rules_if_any(settings: Settings, monitor: MarketMonitor) -> tuple[AlertRule, ...]:
+    return load_rules(settings.alerts_path, monitor.referential) if settings.alerts_path.is_file() else ()
+
+
+def _launch_ui(config: str | None) -> int:
+    """Run the Streamlit app from the project root (so .streamlit/config.toml applies)."""
+    app = Path(__file__).resolve().parent / "ui" / "streamlit_app.py"
+    env = dict(os.environ)
+    if config:
+        env["MARKET_MONITOR_CONFIG"] = str(Path(config).resolve())
+    return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app)], cwd=PROJECT_ROOT, env=env)
+
+
+def _utf8_console() -> None:
+    """Redirected output on Windows defaults to cp1252, which cannot encode "−" or narrow spaces."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+def main(argv: list[str] | None = None) -> int:
+    _utf8_console()
+    args = _parser().parse_args(argv)
+    if args.command == "ui":
+        return _launch_ui(args.config)
+    try:
+        settings = load_settings(args.config)
+        configure_logging(settings)
+        return COMMANDS[args.command](settings, args)
+    except MarketMonitorError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

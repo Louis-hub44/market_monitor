@@ -1,0 +1,51 @@
+index: DAX
+name: DAX
+group: core
+currency: EUR
+as_of: null
+source: 'liste de départ (fin 2025), à vérifier ; poids : market-monitor constituents refresh'
+weights: marketcap
+refresh:
+  kind: manual
+  ishares_url: ''
+members:
+  - {ticker: ADS.DE, name: adidas, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: ADS.DE}
+  - {ticker: AIR.DE, name: Airbus, sector: Industrie, mic: XETR, currency: EUR, fmp: AIR.DE}
+  - {ticker: ALV.DE, name: Allianz, sector: Finance, mic: XETR, currency: EUR, fmp: ALV.DE}
+  - {ticker: BAS.DE, name: BASF, sector: Matériaux, mic: XETR, currency: EUR, fmp: BAS.DE}
+  - {ticker: BAYN.DE, name: Bayer, sector: Santé, mic: XETR, currency: EUR, fmp: BAYN.DE}
+  - {ticker: BEI.DE, name: Beiersdorf, sector: Consommation de base, mic: XETR, currency: EUR, fmp: BEI.DE}
+  - {ticker: BMW.DE, name: BMW, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: BMW.DE}
+  - {ticker: BNR.DE, name: Brenntag, sector: Industrie, mic: XETR, currency: EUR, fmp: BNR.DE}
+  - {ticker: CBK.DE, name: Commerzbank, sector: Finance, mic: XETR, currency: EUR, fmp: CBK.DE}
+  - {ticker: CON.DE, name: Continental, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: CON.DE}
+  - {ticker: DTG.DE, name: Daimler Truck, sector: Industrie, mic: XETR, currency: EUR, fmp: DTG.DE}
+  - {ticker: DBK.DE, name: Deutsche Bank, sector: Finance, mic: XETR, currency: EUR, fmp: DBK.DE}
+  - {ticker: DB1.DE, name: Deutsche Börse, sector: Finance, mic: XETR, currency: EUR, fmp: DB1.DE}
+  - {ticker: DHL.DE, name: DHL Group, sector: Industrie, mic: XETR, currency: EUR, fmp: DHL.DE}
+  - {ticker: DTE.DE, name: Deutsche Telekom, sector: Communication, mic: XETR, currency: EUR, fmp: DTE.DE}
+  - {ticker: EOAN.DE, name: E.ON, sector: Services aux collectivités, mic: XETR, currency: EUR, fmp: EOAN.DE}
+  - {ticker: FRE.DE, name: Fresenius, sector: Santé, mic: XETR, currency: EUR, fmp: FRE.DE}
+  - {ticker: FME.DE, name: Fresenius Medical Care, sector: Santé, mic: XETR, currency: EUR, fmp: FME.DE}
+  - {ticker: G24.DE, name: Scout24, sector: Communication, mic: XETR, currency: EUR, fmp: G24.DE}
+  - {ticker: HNR1.DE, name: Hannover Rück, sector: Finance, mic: XETR, currency: EUR, fmp: HNR1.DE}
+  - {ticker: HEI.DE, name: Heidelberg Materials, sector: Matériaux, mic: XETR, currency: EUR, fmp: HEI.DE}
+  - {ticker: HEN3.DE, name: Henkel, sector: Consommation de base, mic: XETR, currency: EUR, fmp: HEN3.DE}
+  - {ticker: IFX.DE, name: Infineon, sector: Technologie, mic: XETR, currency: EUR, fmp: IFX.DE}
+  - {ticker: MBG.DE, name: Mercedes-Benz, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: MBG.DE}
+  - {ticker: MRK.DE, name: Merck KGaA, sector: Santé, mic: XETR, currency: EUR, fmp: MRK.DE}
+  - {ticker: MTX.DE, name: MTU Aero Engines, sector: Industrie, mic: XETR, currency: EUR, fmp: MTX.DE}
+  - {ticker: MUV2.DE, name: Munich Re, sector: Finance, mic: XETR, currency: EUR, fmp: MUV2.DE}
+  - {ticker: PAH3.DE, name: Porsche SE, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: PAH3.DE}
+  - {ticker: QIA.DE, name: Qiagen, sector: Santé, mic: XETR, currency: EUR, fmp: QIA.DE}
+  - {ticker: RHM.DE, name: Rheinmetall, sector: Industrie, mic: XETR, currency: EUR, fmp: RHM.DE}
+  - {ticker: RWE.DE, name: RWE, sector: Services aux collectivités, mic: XETR, currency: EUR, fmp: RWE.DE}
+  - {ticker: SAP.DE, name: SAP, sector: Technologie, mic: XETR, currency: EUR, fmp: SAP.DE}
+  - {ticker: SRT3.DE, name: Sartorius, sector: Santé, mic: XETR, currency: EUR, fmp: SRT3.DE}
+  - {ticker: SIE.DE, name: Siemens, sector: Industrie, mic: XETR, currency: EUR, fmp: SIE.DE}
+  - {ticker: ENR.DE, name: Siemens Energy, sector: Industrie, mic: XETR, currency: EUR, fmp: ENR.DE}
+  - {ticker: SHL.DE, name: Siemens Healthineers, sector: Santé, mic: XETR, currency: EUR, fmp: SHL.DE}
+  - {ticker: SY1.DE, name: Symrise, sector: Matériaux, mic: XETR, currency: EUR, fmp: SY1.DE}
+  - {ticker: VOW3.DE, name: Volkswagen, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: VOW3.DE}
+  - {ticker: VNA.DE, name: Vonovia, sector: Immobilier, mic: XETR, currency: EUR, fmp: VNA.DE}
+  - {ticker: ZAL.DE, name: Zalando, sector: Consommation discrétionnaire, mic: XETR, currency: EUR, fmp: ZAL.DE}

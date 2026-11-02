@@ -1,0 +1,210 @@
+"""Assemble the daily-macro content from one performance computation."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date, datetime
+
+import pandas as pd
+
+from market_monitor.alerts import AlertReport, AlertRule, evaluate, rule_universe
+from market_monitor.analytics.performance import Horizon, rank_movers
+from market_monitor.analytics.session_review import IndexLine, index_line
+from market_monitor.data.models import DateLike, to_date
+from market_monitor.equities.movers import verify_members
+from market_monitor.equities.universe import EquityUniverse
+from market_monitor.exceptions import MarketMonitorError
+from market_monitor.export.display import DEFAULT_LINE, DEFAULT_STYLE, NumberStyle, decorate
+from market_monitor.export.layout import DailyMacroLayout, MoversRule, Section, StocksRule
+from market_monitor.monitor import MarketMonitor
+
+
+@dataclass
+class DailyMacroData:
+    """Everything the Excel / PNG / text renderers need."""
+
+    as_of: date
+    title: str
+    columns: tuple[str, ...]
+    sections: list[tuple[str, pd.DataFrame]]
+    movers: pd.DataFrame
+    universe: pd.DataFrame  # every row computed (sections first), with ``bp_factor``
+    movers_rule: MoversRule
+    alerts: AlertReport | None = None
+    errors: dict[str, str] = field(default_factory=dict)
+    warnings: dict[str, str] = field(default_factory=dict)
+    checks: dict[str, list[str]] = field(default_factory=dict)  # id -> points to check
+    style: NumberStyle = DEFAULT_STYLE
+    #: levels behind the bands (closes only): the charts reuse them, so both always agree
+    levels: pd.DataFrame = field(default_factory=pd.DataFrame, repr=False)
+    #: ids (bands and charts) whose session of ``as_of`` was still open: last close shown
+    provisional: frozenset[str] = frozenset()
+    #: « Valeurs marquantes » (``stocks`` of the layout; ``None`` when disabled)
+    stock_lines: list[IndexLine] | None = None
+    #: points to check on the members (excluded moves, gaps or missing second source)
+    stock_checks: list[str] = field(default_factory=list)
+
+    def shown(self) -> pd.DataFrame:
+        """Rows that end up in the published bands or movers, once each."""
+        frames = [t for _, t in self.sections] + [self.movers]
+        shown = pd.concat(frames) if frames else self.universe.iloc[0:0]
+        return shown[~shown.index.duplicated()]
+
+
+def _rows(table: pd.DataFrame, ids: Sequence[str]) -> pd.DataFrame:
+    """Rows of ``ids`` present in ``table`` (instruments no active provider serves are absent)."""
+    return table.loc[[i for i in ids if i in table.index]]
+
+
+def build_daily_macro(monitor: MarketMonitor, layout: DailyMacroLayout,
+                      as_of: DateLike | None = None,
+                      rules: Sequence[AlertRule] = (), *,
+                      now: datetime | None = None,
+                      equities: EquityUniverse | None = None) -> DailyMacroData:
+    """One ``performance`` call over sections, movers universe and alert rules, then slicing.
+
+    Closing prices only: when the review is dated today, a print of today whose session is
+    still open (``layout.closing``, Paris time ``now``) is ignored - the line shows its
+    last close, in the bands as in the charts.
+
+    Every line that may be published - the bands and the movers candidates - is
+    cross-checked against a second source first, so a bad print is listed under "À
+    vérifier avant diffusion" instead of being reported as a move.
+    """
+    ids = list(dict.fromkeys(layout.section_ids + layout.movers.universe + rule_universe(rules)))
+    clock = now or monitor.data_time()
+    day = to_date(as_of) if as_of is not None else clock.date()
+    provisional = (layout.closing.open_sessions(monitor.referential, ids + list(layout.chart_ids), clock)
+                   if day == clock.date() else set())
+    report = monitor.performance(watchlist=None, as_of=day, ids=ids, provisional=provisional)
+    published = list(layout.section_ids) + movers_candidates(
+        _rows(report.table, layout.movers.universe), layout.movers)
+    monitor.verify(report, published)
+    table = report.table.copy()
+    ref = monitor.referential
+    table["bp_factor"] = [ref.get(str(i)).bp_factor for i in table.index]
+    stock_lines, stock_checks = (stock_moves(monitor, equities, layout.stocks, report.as_of, table)
+                                 if layout.stocks.enabled else (None, []))
+    return DailyMacroData(
+        as_of=report.as_of,
+        title=layout.title,
+        columns=layout.columns,
+        sections=[(s.title, _band(table, s, layout)) for s in layout.sections],
+        movers=_decorated_movers(table, layout),
+        universe=table,
+        movers_rule=layout.movers,
+        alerts=evaluate(rules, table, report.as_of) if rules else None,
+        errors=dict(report.errors),
+        warnings=dict(report.warnings),
+        checks=_lagging(report.checks(), table, layout.section_ids, day, provisional),
+        style=layout.style,
+        levels=report.levels,
+        provisional=frozenset(provisional),
+        stock_lines=stock_lines,
+        stock_checks=stock_checks,
+    )
+
+
+def stock_moves(monitor: MarketMonitor, equities: EquityUniverse | None, rule: StocksRule,
+                as_of: date, table: pd.DataFrame | None = None) -> tuple[list[IndexLine], list[str]]:
+    """Three risers / fallers per index, cross-checked before they are published.
+
+    The candidates (twice the count on each side) are compared with FMP when ``rule.verify``:
+    a gap moves the member to "À vérifier" and the next one takes its place. A member that
+    cannot be checked stays, flagged under "À vérifier avant diffusion"; so do the members
+    left out by the movers' own safeguards (split, bad print, threshold).
+    """
+    if equities is None:
+        return [], ["Valeurs marquantes : couche actions non configurée"]
+    lines: list[IndexLine] = []
+    checks: list[str] = []
+    known = {c.index for c in equities.compositions}
+    for index in rule.indices:
+        if index not in known:
+            checks.append(f"Valeurs marquantes : pas de composition pour {index} (config/constituents)")
+            continue
+        try:
+            movers = equities.movers(index, monitor, as_of)
+        except MarketMonitorError as exc:
+            checks.append(f"Valeurs marquantes {index} : {exc}")
+            continue
+        name = movers.name
+        if movers.session is None or movers.counted.empty:
+            checks.append(f"{name} : cours des titres indisponibles ({'; '.join(movers.notes) or 'aucun'})")
+            continue
+        verdicts: dict[str, str] = {}
+        second = equities.second_source(monitor, index) if rule.verify else None
+        if second is not None:
+            wide = 2 * rule.count
+            candidates = list(dict.fromkeys([*movers.top(wide)["ticker"], *movers.flop(wide)["ticker"]]))
+            verdicts = verify_members(movers, candidates, second, rule.tolerance_pp)
+        line = index_line(movers, rule.count)
+        lines.append(line)
+        cited = (*line.risers, *line.fallers)
+        if rule.verify and second is None:
+            checks.append(f"{name} : titres cités non contrôlés (FMP inactif), cours Yahoo seuls")
+        elif rule.verify:
+            unchecked = [m.name for m in cited if verdicts.get(m.ticker) == "indisponible"]
+            if unchecked:
+                checks.append(f"{name} : non contrôlé(s) par une 2e source : {', '.join(unchecked)}")
+        checks += [f"{name} - {c}" for c in movers.checks]
+        checks += [f"{name} : {n}" for n in movers.notes if "actualiser" in n or "rafraîchir" in n]
+        found = table["level_date"].get(index) if table is not None else None
+        level_date = pd.Timestamp(found) if found is not None and pd.notna(found) else None
+        if level_date is not None and level_date.date() != movers.session:
+            checks.append(f"{name} : titres au {movers.session:%d/%m}, indice au {level_date:%d/%m}")
+    return lines, checks
+
+
+def _lagging(checks: dict[str, list[str]], table: pd.DataFrame, ids: Sequence[str], day: date,
+             provisional: set[str]) -> dict[str, list[str]]:
+    """Add a point to check for a published line one session behind the expected close.
+
+    Expected: the review day's close, or the previous business day's while today's session
+    is open. A source publishing late (Bundesbank curve in the early morning) or a local
+    holiday leaves the line on an older close: shown before publication, not hidden.
+    """
+    out = {k: list(v) for k, v in checks.items()}
+    dates = pd.to_datetime(table["level_date"])
+    for instrument_id in ids:
+        if instrument_id not in table.index or bool(table.at[instrument_id, "stale"]):
+            continue  # missing or stale lines are already listed
+        last = dates[instrument_id]
+        expected = pd.Timestamp(day)
+        if instrument_id in provisional:  # session still open: yesterday's close is expected
+            expected -= pd.offsets.BDay()
+        if pd.notna(last) and last < expected:
+            out.setdefault(instrument_id, []).append(
+                f"dernière clôture du {last:%d/%m}, attendue au {expected:%d/%m} "
+                "(source en retard ou jour férié)")
+    return out
+
+
+def _band(table: pd.DataFrame, section: Section, layout: DailyMacroLayout) -> pd.DataFrame:
+    """Rows of a band with their display columns (labels, decimals, units)."""
+    rows = _rows(table, section.instruments)
+    lines = tuple(section.line(str(i)) for i in rows.index)
+    return decorate(rows, lines, layout.columns, layout.style)
+
+
+def _decorated_movers(table: pd.DataFrame, layout: DailyMacroLayout) -> pd.DataFrame:
+    """Movers written like their band line when they have one (same decimals / labels)."""
+    movers = select_movers(_rows(table, layout.movers.universe), layout.movers)
+    lines = []
+    for instrument_id in movers.index:
+        home = next((s for s in layout.sections if instrument_id in s.instruments), None)
+        lines.append(home.line(str(instrument_id)) if home else DEFAULT_LINE)
+    return decorate(movers, tuple(lines), ("chg_1d",), layout.style)
+
+
+def movers_candidates(table: pd.DataFrame, rule: MoversRule) -> list[str]:
+    """Lines that could make the movers list (twice the count, before any exclusion)."""
+    z = table["z_1d"].where(~table["stale"]).abs().dropna()
+    return [str(i) for i in z.sort_values(ascending=False).index[: 2 * rule.count]]
+
+
+def select_movers(table: pd.DataFrame, rule: MoversRule) -> pd.DataFrame:
+    """Largest |z 1J| above the threshold; stale, suspect and contract-roll rows excluded."""
+    ranked = rank_movers(table, Horizon.D1, len(table))
+    return ranked[ranked["z_1d"].abs() >= rule.min_abs_z].head(rule.count)

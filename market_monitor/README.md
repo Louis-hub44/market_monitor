@@ -1,0 +1,1110 @@
+# Market Monitor
+
+Écran d'accueil multi-actifs du mini terminal maison, dans l'esprit des écrans **WEI / WB /
+FXC / CMDTY / MOST** de Bloomberg et de Koyfin, et outil de préparation de la revue macro
+quotidienne d'un gérant multi-asset : la séance de la veille en un écran, tableaux de
+performances (1J → 1A, range 52 semaines, z-scores), fiche instrument, courbes de taux, top
+movers par indice avec contributions et largeur de marché, historiques, corrélations, alertes
+et export « daily macro » prêt à coller. Clôtures uniquement, contrôle croisé avant diffusion.
+
+![La séance d'hier (données synthétiques)](docs/seance_hier.png)
+
+**Sommaire** : 1 Démarrage rapide · 2 Routine du matin · 3 Architecture · 4 Configuration ·
+5 Données · 6 Référentiel · 7 Performances · 8 Dashboard · 9 Historique et corrélations ·
+(8.0 Séance d'hier · 8.1 Fiche · 8.2 Courbes · 8.3 Top movers) · 9 Historique et corrélations ·
+10 Export daily macro · 10.1 Contrôles avant publication · 11 Alertes ·
+12 Intégration au terminal · 13 Ligne de commande · 14 Qualité · 15 Dépannage ·
+16 Limites et évolutions
+
+---
+
+## 1. Démarrage rapide
+
+```powershell
+scripts\install.bat          # .venv, dépendances, copie de .env.example en .env
+notepad .env                 # renseigner FMP_API_KEY
+scripts\doctor.bat           # vérifie la configuration et teste une donnée par provider
+market-monitor constituents refresh   # compositions et poids des indices (§ 5.5)
+market-monitor equities refresh       # cours des titres des indices (~700, quelques minutes)
+scripts\dashboard.bat        # ouvre le dashboard dans le navigateur
+```
+
+Équivalent manuel (Python 3.11+) :
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[dev]"
+copy .env.example .env
+market-monitor doctor --online
+market-monitor ui
+```
+
+Bloomberg (poste avec Terminal ouvert et connecté) : `blpapi` n'est pas sur PyPI.
+
+```powershell
+pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
+```
+
+Sans Terminal, `set MARKET_MONITOR_PROVIDERS=fmp,free` : les lignes que seul Bloomberg
+couvre (courbes souveraines pays, iTraxx) sont alors signalées sans données.
+
+Dans PyCharm : interpréteur `.venv`, `src` marqué *Sources Root*, pytest comme runner.
+
+## 2. La routine du matin
+
+1. **8h15, tâche planifiée** `scripts\daily_macro.bat` (Planificateur de tâches Windows :
+   déclencheur quotidien, jours ouvrés ; action « Démarrer un programme » sur le `.bat` ;
+   « Commencer dans » la racine du projet). Elle écrit
+   `exports\daily_macro_<date>.xlsx / .png / .txt` et `exports\alerts_latest.json`, journalise
+   dans `logs\market_monitor.log`, et renvoie le code 3 en cas d'alerte critique.
+   Elle lance d'abord `market-monitor equities refresh` (cours des titres des indices).
+2. **Dashboard, « Séance d'hier »** (vue d'ouverture) : indices, secteurs, taux, z-scores,
+   valeurs marquantes par indice ; puis **Top movers** pour le détail d'un indice et
+   **Vue d'ensemble** pour les tableaux complets.
+3. **Vue Daily macro** : sans Bloomberg, saisir les iTraxx de la veille dans l'encart
+   « Saisie manuelle » (§ 5.4). Texte prêt à coller (bouton de copie), PNG des bandeaux pour la
+   page A4, Excel. Relire la section « À vérifier avant diffusion » (données manquantes,
+   périmées ou issues d'un proxy) avant d'envoyer quoi que ce soit.
+4. Au besoin, **Historique** et **Corrélations** pour illustrer un mouvement.
+
+## 3. Architecture
+
+```
+market_monitor/
+├── config/
+│   ├── config.yaml               # paramètres (aucun secret)
+│   ├── instruments.yaml          # référentiel : conventions + tickers par provider
+│   ├── watchlists.yaml           # sélections d'instruments
+│   ├── daily_macro.yaml          # bandeaux et règles de l'export
+│   ├── alerts.yaml               # règles d'alerte
+│   └── constituents/             # composition des indices (un YAML par indice)
+├── .env                          # FMP_API_KEY (non versionné, voir .env.example)
+├── .streamlit/config.toml        # thème du dashboard
+├── app.py                        # streamlit run app.py
+├── scripts/                      # install, doctor, dashboard, daily_macro, check (.bat)
+├── src/market_monitor/
+│   ├── config.py                 # chargement YAML + .env, validation, journalisation
+│   ├── exceptions.py             # hiérarchie d'erreurs
+│   ├── referential.py            # référentiel et watchlists
+│   ├── monitor.py                # façade MarketMonitor (point d'entrée unique)
+│   ├── text_format.py            # nombres et dates à la française
+│   ├── doctor.py                 # diagnostic d'installation
+│   ├── cli.py                    # ligne de commande
+│   ├── data/                     # providers, cache, service multi-sources
+│   │   ├── models.py · base.py · quality.py · cache.py · cached_provider.py
+│   │   ├── service.py · factory.py
+│   │   └── providers/            # bloomberg.py · fmp.py · free.py
+│   ├── analytics/                # history.py · performance.py · comparison.py · correlation.py
+│   │                             # instrument.py · curves.py · session_review.py
+│   ├── equities/                 # compositions, cours des titres, calendriers, top movers
+│   │   ├── constituents.py · sources.py · calendars.py · panel.py · loader.py
+│   │   └── movers.py · instruments.py · universe.py · cli.py
+│   ├── alerts/                   # rules.py · engine.py
+│   ├── export/                   # layout.py · builder.py · excel.py · image.py · text.py
+│   │                             # charts.py · curves_chart.py
+│   └── ui/                       # seule couche qui importe Streamlit
+├── tests/                        # 480 tests pytest, 100 % hors ligne
+├── docs/                         # captures (données synthétiques)
+└── .github/workflows/ci.yml      # lint, typage, tests sous Windows et Linux
+```
+
+Principes :
+
+* **Le moteur ignore Streamlit.** Données, analytics, alertes et exports sont du Python pur,
+  testé sans navigateur ; l'UI n'appelle que `MarketMonitor`.
+* **Identifiants canoniques** (`SX5E`, `BUND_10Y`, `OAT_BUND_10Y`) partout au-dessus de la
+  couche de données ; chaque provider garde son propre namespace (`SX5E Index`, `^STOXX50E`).
+* **Fallback par instrument, pas par provider** : si Bloomberg sert le SX5E mais pas
+  l'€STR, seul l'€STR part sur le provider suivant.
+* **Les conventions vivent dans le référentiel**, pas dans le code : unité, sens de lecture
+  (% ou pb), conversions d'échelle, proxies, instruments dérivés.
+* **Rien d'implicite sur les données** : jamais de 0 à la place d'un trou, forward-fill
+  toujours borné et explicite, chaque ligne porte sa source et sa date.
+
+```
+Dashboard / CLI / tâche planifiée
+        │
+        ▼
+  MarketMonitor ──► Referential (YAML) ──► PerformanceEngine ──► Alertes, Export
+        │      EquityUniverse ──► compositions + cours des titres ──► Top movers
+        │
+        ▼
+  MarketDataService ──► CachedProvider(Bloomberg) ──► blpapi
+      (fallback)    └──► CachedProvider(FMP)       ──► REST FMP
+                    └──► CachedProvider(Free)      ──► ECB Data Portal / yfinance
+```
+
+## 4. Configuration
+
+| Fichier / variable | Contenu |
+|---|---|
+| `config/config.yaml` | ordre des providers, Bloomberg (hôte, port, timeout), FMP, BCE, cache, fuseau, paramètres des z-scores, UI, chemins de l'export et des alertes, journalisation |
+| `config/instruments.yaml` | référentiel (§ 6) |
+| `config/watchlists.yaml` | sélections : `home`, `daily_macro`, `sectors`, `rates`, `cross_asset` |
+| `config/daily_macro.yaml` | bandeaux, colonnes et mouvements marquants de l'export (§ 10) |
+| `config/alerts.yaml` | règles d'alerte (§ 11) |
+| `.env` | `FMP_API_KEY` |
+| `MARKET_MONITOR_PROVIDERS` | surcharge de l'ordre des providers, ex. `fmp,free` |
+| `MARKET_MONITOR_CONFIG` | chemin d'un autre `config.yaml` |
+| `MARKET_MONITOR_CA_BUNDLE` | certificat racine du proxy d'entreprise (PEM) ; `REQUESTS_CA_BUNDLE` et `SSL_CERT_FILE` sont aussi reconnus |
+| `MARKET_MONITOR_INSECURE_SSL` | `1` : vérification SSL désactivée (dépannage, réseau de confiance uniquement) |
+
+Priorité : variables d'environnement > `.env` > `config.yaml` > valeurs par défaut. Les
+chemins relatifs sont résolus par rapport au fichier `config.yaml`. Toute valeur invalide
+(provider inconnu, fuseau inexistant, seuil négatif…) est refusée au chargement avec un
+message qui nomme la clé fautive. `tzdata` est une dépendance : sans elle, `zoneinfo` ne
+connaît pas `Europe/Paris` sous Windows.
+
+### Proxy d'entreprise (inspection SSL)
+
+Derrière Zscaler, Netskope, Fortinet…, le proxy re-signe le trafic HTTPS et toutes les
+sources échouent ensemble sur `certificate verify failed` : le dashboard ne sert plus que le
+cache. Yahoo est le cas le plus fréquent, car `yfinance` passe par `curl_cffi`, qui ignore
+`REQUESTS_CA_BUNDLE`. Section `network` de `config.yaml` (ou variables ci-dessus) :
+
+1. `ca_bundle: C:\ProgramData\Zscaler\ZscalerRootCertificate.pem` — **solution à
+   privilégier** : la vérification reste active et reconnaît le proxy (fichier à demander à
+   l'informatique) ;
+2. `insecure_ssl: true` — vérification désactivée, en dépannage et sur un réseau de confiance
+   uniquement ; ignoré si `ca_bundle` est valide.
+
+Dès que l'un des deux est renseigné, FMP, la BCE et Yahoo utilisent une session `requests`
+configurée (`src/market_monitor/network.py`) ; yfinance perd alors son empreinte TLS
+« navigateur », compensée par un `User-Agent` Chrome. Sans réglage, rien ne change.
+`market-monitor doctor --online` affiche la configuration réseau, sonde FMP, BCE et Yahoo et
+désigne le proxy quand toutes les sources échouent sur le certificat.
+
+**Depuis le dashboard** : au lancement, un écran *Connexion réseau* s'affiche **avant tout
+chargement** — aucune requête ne part tant que vous n'avez pas cliqué sur *Lancer le
+chargement*. Trois modes : *Connexion standard*, *Certificat d'entreprise* (chemin du
+fichier, pré-rempli avec les certificats trouvés sur le poste) et *Contourner le SSL*.
+*Tester la connexion* sonde FMP, la BCE et Yahoo et qualifie chaque échec. Le mode actif
+reste affiché dans la barre du haut et dans la barre latérale (*Changer la connexion*) ; si
+la plupart des séries échouent sur le certificat, un bandeau propose *Contourner le SSL* en
+un clic. `ui.network_gate: false` dans `config.yaml` supprime l'écran et applique directement
+la section `network` (usage à la maison).
+
+## 5. Données
+
+### 5.1 Providers et tickers natifs
+
+| Provider | Format | Exemples |
+|---|---|---|
+| `bloomberg` | ticker Bloomberg | `SX5E Index`, `GDBR10 Index`, `EURUSD Curncy`, `CO1 Comdty` |
+| `fmp` | symbole FMP | `^STOXX50E`, `^GSPC`, `EURUSD`, `BZUSD`, `GCUSD`, `BTCUSD` |
+| `fmp` | taux US (par yield, %) | `treasury:year2`, `treasury:year10`, `treasury:year30` |
+| `free` | Yahoo (préfixe optionnel `yf:`) | `^STOXX50E`, `EURUSD=X`, `BZ=F`, `^VIX`, `BTC-USD` |
+| `free` | ECB SDMX `ecb:FLOW/KEY` | `ecb:EST/B.EU000A2X2A25.WT` (€STR) |
+| `free` | Stooq `stooq:SYMBOLE` (rendements souverains en %) | `stooq:10dey.b` (Bund 10 ans), `stooq:2fry.b`, `stooq:10ity.b`, `stooq:30esy.b` |
+| `free` | Bundesbank SDMX `bbk:FLOW/KEY` | `bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A` (zéro-coupon 10 ans) |
+| `free` | FRED `fred:SERIE` | `fred:DGS2` (UST 2 ans, publié à J-1, secours) |
+| `free` | API FRED `fredapi:SERIE` (clé gratuite `FRED_API_KEY`, autre serveur) | `fredapi:BAMLH0A0HYM2` (OAS US High Yield) |
+| `free` | STOXX `stoxx:SYMBOLE` (fichier historique) | `stoxx:v2tx` (VSTOXX) |
+| `free` | CNBC `cnbc:SYMBOLE` (barres quotidiennes, non officiel) | `cnbc:FR10Y-FR`, `cnbc:DE2Y-DE`, `cnbc:IT30Y-IT`, `cnbc:GB10Y-GB`, `cnbc:JP10Y-JP`, `cnbc:US10Y` |
+| `free` | MSCI `msci:CODE[/VARIANTE/DEVISE]` (niveaux de clôture officiels) | `msci:891800` (MSCI EM, prix, USD), `msci:990100/NETR/EUR` |
+| `manual` | identifiant de saisie (§ 5.4) | `ITRX_MAIN`, `ITRX_XOVER`, `EUR_IG_OAS`, `EUR_IG_YLD` |
+
+Sans Bloomberg, le fallback gratuit couvre les courbes Bund, OAT, BTP, Bonos, Gilt et JGB
+(Stooq, clôtures de fin de journée gratuites sans clé, puis CNBC ; Bund : enfin la courbe
+officielle de la Bundesbank), l'UST 2 ans (FRED), le VSTOXX
+(STOXX) et le secteur immobilier (ETF iShares, signalé comme proxy). Un ticker peut être une
+**chaîne de secours** `a|b` : la première source qui répond l'emporte, un repli est signalé en
+avertissement et en « source de secours » dans les points à vérifier (souverains européens :
+Stooq puis CNBC, Bund : puis Bundesbank ; UST : CNBC, puis FRED et le future Micro 2Y
+`2YY=F` pour le 2 ans, les indices CBOE `^FVX` / `^TNX` / `^TYX` pour les autres). Toute la
+courbe US vient ainsi d'une seule source à la même date : avec FRED (publié à J-1) et Yahoo,
+la pente 2s10s affichait la veille sans être marquée. Stooq sert parfois une page anti-robot : elle
+est reconnue et CNBC prend le relais (signalé). Depuis le 25/10/2026, les barres quotidiennes de
+CNBC ne donnaient plus la clôture des emprunts européens (27/10 : Bund 3,340 % au lieu de
+3,355 %, OAT 4,908 % au lieu de 4,924 %) : Stooq est passé en tête (v1.6.4) et CNBC sert de
+contrôle croisé, à 1,5 pb près (`quality.cross_check_quote_tol_bp`) au lieu des 25 pb tolérés
+face à la courbe Bundesbank.
+**MSCI EM** vient du site MSCI (niveau officiel de l'indice, ~1 742 début octobre 2026) ; l'ETF
+`EEM` (~50 $) n'est plus utilisé. En secours, le future ICE MSCI EM `MME=F` : le proxy est
+déclaré **par alternative** (`proxy: {"MME=F": ...}`), donc signalé seulement quand c'est lui
+qui sert.
+Une source injoignable (pare-feu) est ignorée 10 minutes après le premier échec, au lieu de
+coûter un délai d'attente par ticker. Ces sources n'ont pas de
+clé ni de garantie de service : `market-monitor fetch --provider free --tickers stooq:10fry.b
+--no-cache` vérifie un ticker en une commande. Restent sans source gratuite : les indices
+iTraxx (données Markit sous licence), servis par Bloomberg ou par **saisie manuelle** (§ 5.4).
+Un instrument qu'aucun provider
+actif ne sait servir (ou un spread dont une jambe est dans ce cas) est **masqué** des
+watchlists, de l'historique, des corrélations, de l'export et des alertes, au lieu d'apparaître
+en donnée manquante ; il revient automatiquement dès que Bloomberg est disponible.
+
+Sur un réseau d'entreprise, *Tester la connexion* (écran de démarrage) indique quelles
+sources passent. Si seule la BCE répond, `market-monitor ecb-series FLOW MOTIF` liste les
+séries qu'elle publie (dimension vide = joker, `+` = ou), par exemple
+`market-monitor ecb-series FM "D.DE+FR+IT+ES....YLD"` ; `market-monitor diagnostic-taux` teste en une fois la
+Bundesbank, CNBC et la BCE et affiche leur réponse brute ; une clé trouvée s'utilise ensuite comme
+`ecb:FM/<clé>` dans `instruments.yaml`. Il compare aussi, pour le Bund et l'OAT 10 ans, les
+dernières clôtures de CNBC (avec l'horodatage brut de chaque barre), de Stooq et de la
+Bundesbank, et conclut : « concorde au jour près » ou « EN RETARD D'UNE SÉANCE ».
+Sinon, demander à l'informatique d'ouvrir `stooq.com`,
+`fred.stlouisfed.org`, `api.statistiken.bundesbank.de`, `www.stoxx.com`, `ts-api.cnbc.com` et
+`app2.msci.com`.
+
+Un provider indisponible (pas de `blpapi`, pas de clé FMP) est ignoré au démarrage ; un
+provider qui tombe en cours de route (Terminal fermé, quota FMP) déclenche le fallback
+pour la requête en cours. La clé FMP n'apparaît jamais dans un message d'erreur ni un journal.
+
+### 5.2 Contrat de données
+
+Toute réponse `HistoryResult` respecte :
+
+| Élément | Convention |
+|---|---|
+| index | `DatetimeIndex` nommé `date`, sans fuseau, date de cotation locale, trié, unique |
+| colonnes | une par ticker demandé, **dans l'ordre de la requête** (même si vide) |
+| valeurs | `float64`, **unité native** de la source (prix, rendement en %, spread en pb) |
+| manquant | `NaN` — jamais 0, jamais de forward-fill à ce niveau |
+| `errors` | ticker → raison, pour les tickers **sans aucune donnée** |
+| `warnings` | ticker → message, pour les données **dégradées** (cache périmé, refresh partiel) |
+| `sources` | ticker → provider qui a réellement servi la donnée |
+
+L'harmonisation d'unités (ex. `^TNX` Yahoo vs `USGG10YR Index`) relève du référentiel
+(§ 6), pas des providers. L'alignement des calendriers (jour férié US vs EUR) est une
+étape explicite et **bornée** : `align_calendars(df, max_fill_days=3)`.
+
+### 5.3 Cache local
+
+Un fichier parquet par `(provider, champ, ticker)`. Les métadonnées stockent la
+**fenêtre de couverture** $[c_s, c_e]$ réellement demandée au provider (≠ première/dernière
+observation : une fenêtre qui se termine un jour férié est tout de même couverte) et
+l'instant du dernier téléchargement $t_f$ (date locale $d_f$).
+
+Pour une requête $[s, e]$, avec $e \leftarrow \min(e, \text{aujourd'hui})$, TTL $\tau$ et
+look-back $L$ :
+
+$$
+S_{\text{gauche}} = [\,s,\; c_s - 1\,] \quad \text{si } s < c_s
+$$
+
+$$
+S_{\text{droite}} = \big[\,\max\!\big(c_s,\; \min(c_e + 1,\; d_f) - L\big),\; e\,\big]
+\quad \text{si } e > c_e \;\text{ ou }\; \big(e \ge d_f \text{ et } t - t_f > \tau\big)
+$$
+
+* Les points datés de $d_f$ (ou après) sont **provisoires** : ils sont re-téléchargés
+  une fois le TTL écoulé.
+* Le look-back $L$ re-tire les derniers jours pour capter révisions et prints tardifs.
+* Les segments sont toujours contigus à la couverture : elle reste un intervalle unique.
+* Un historique « fermé » ($e < d_f$ et $e \le c_e$) n'est **jamais** re-téléchargé.
+* Si le provider tombe, le cache est servi avec un `warning` ; un ticker inconnu n'est
+  jamais mis en cache comme « vide ».
+* **Une série, une source.** Pour une chaîne de secours `a|b`, le cache mémorise l'alternative
+  qui a servi (son *origine*). Si un rafraîchissement est servi par une autre alternative
+  (CNBC bloqué, Bundesbank répond), toute la fenêtre est rechargée depuis celle-ci au lieu
+  d'être recollée : deux sources du « même » taux diffèrent de quelques pb (générique contre
+  zéro-coupon), et une série recollée montrait un faux mouvement à la jointure, qui faussait
+  le 1S, le MTD, les z-scores et les spreads. Quand la source préférée revient, la série
+  repasse entièrement sur elle. L'historique ajouté à gauche est demandé à l'origine en
+  cache, et un cache antérieur à la v1.3 (origine inconnue) est reconstruit une fois.
+  Cas couvert par `tests/test_cache_origins.py`.
+
+* **Barres OHLC.** `get_bars` ramène ouverture, plus haut, plus bas, clôture et volume en un
+  seul appel quand la source les publie (Yahoo, FMP, Stooq, CNBC) ; BCE, Bundesbank, FRED,
+  STOXX, MSCI et la saisie manuelle ne donnent que la clôture. Chaque champ garde son fichier
+  (format inchangé) ; un champ non publié est mis en cache vide sur la même couverture, donc
+  jamais redemandé, et ne vient jamais d'une autre source que la clôture qui l'accompagne.
+  Une barre incohérente (plus bas au-dessus de l'ouverture…) perd son O/H/L, pas sa clôture.
+* **Historiques longs par tranches.** Une fenêtre de plus de `cache.tranche_days` (5 ans par
+  défaut) est chargée par tranches, de la plus récente à la plus ancienne ; dès qu'une tranche
+  revient vide, l'historique de la source est épuisé : le reste de la fenêtre est noté couvert
+  sans être demandé (« Max » n'est demandé qu'une fois). Une tranche refusée arrête la descente
+  sans laisser de trou. Une extension vers la droite avance dans l'ordre chronologique.
+* **Profondeur réelle** : `market-monitor depth SX5E BUND_10Y --load` charge depuis 1990 puis
+  affiche, par instrument et par source, la première donnée, le nombre d'observations, si le
+  maximum de la source est atteint et la part de séances avec OHLC complet. Un spread est aussi
+  profond que sa jambe la plus courte.
+
+**Exemple chiffré** ($\tau = 15$ min, $L = 5$ j) — cas couvert par
+`test_ttl_expiry_refreshes_only_the_tail_with_lookback` :
+
+1. Lundi 05/10/2026 08:00 UTC, requête SX5E du 01/06 au 05/10 : cache vide →
+   un appel $[01/06, 05/10]$. Couverture $[01/06, 05/10]$, $d_f = 05/10$.
+2. 08:10, même requête : $t - t_f = 10\text{ min} \le \tau$ → **0 appel**.
+3. 08:20, même requête : $t - t_f = 20\text{ min} > \tau$ et $e \ge d_f$ →
+   ancre $= \min(06/10, 05/10) = 05/10$, début $= 05/10 - 5 = 30/09$ →
+   **un seul appel $[30/09, 05/10]$** au lieu de quatre mois.
+4. Requête du 02/03 au 05/10 : seul le trou $[02/03, 31/05]$ est demandé.
+
+**Spreads de crédit cash** (en pb) :
+
+| Ligne | Calcul | Sources |
+|---|---|---|
+| HY-IG US | OAS US High Yield − OAS US Investment Grade | Bloomberg (`LF98OAS`, `LUACOAS`), sinon FRED : ICE BofA `BAMLH0A0HYM2`, `BAMLC0A0CM` |
+| HY-IG Euro | OAS Euro High Yield − OAS Euro IG | Euro HY : Bloomberg, sinon FRED `BAMLHE00EHYIOAS` ; Euro IG : Bloomberg (`LECPOAS`), sinon saisie manuelle |
+| G spread Euro IG | 100 × (rendement Euro Corporate IG − Bund 5 ans) | rendement : Bloomberg, sinon saisie manuelle ; Bund 5 ans : chaîne habituelle |
+
+FRED publie les indices ICE BofA gratuitement (officiel, quotidien, J-1, historique de trois
+ans) et en %, d'où `scale: 100`. Pour l'**Euro IG**, aucune source gratuite fiable n'existe :
+ICE, iBoxx et Bloomberg sont sous licence et FRED ne publie que l'Euro High Yield ; la ligne
+passe donc par Bloomberg ou par la saisie manuelle (§ 5.4). Le G spread utilise le Bund
+5 ans, maturité proche de la duration de l'indice (~4,5 ans). Les tickers Bloomberg sont à
+vérifier sur le Terminal ; leurs niveaux diffèrent de quelques pb des indices ICE.
+
+Au bureau, `fred.stlouisfed.org` peut être bloqué : la chaîne `fred:X|fredapi:X` essaie alors
+l'API FRED (`api.stlouisfed.org`), avec une clé gratuite à créer sur
+fredaccount.stlouisfed.org et à placer dans `.env` (`FRED_API_KEY=…`). *Tester la connexion*
+sonde les deux serveurs. Sinon, la ligne se saisit à la main.
+
+### 5.4 Saisie manuelle (iTraxx sans Bloomberg)
+
+Aucune source gratuite ne publie l'iTraxx Europe Main / Crossover 5 ans. Le provider `manual`
+sert des cotations **saisies à la main** (spread de clôture lu sur un écran ou une note
+broker), stockées dans `data/manual_quotes.csv` (`date,ticker,value`, hors Git). Il est
+toujours ajouté en dernier dans `providers.priority` : Bloomberg, quand il est connecté,
+reste prioritaire. Le fichier est relu à chaque calcul (pas de cache) : une correction se voit
+immédiatement.
+
+* **Dashboard**, vue *Daily macro* : encart « Saisie manuelle », ouvert quand une valeur
+  manque pour la dernière séance (date proposée : jour ouvré précédant la date d'arrêté).
+  Il propose aussi les jambes des spreads publiés (OAS Euro IG, rendement Euro IG…) : une
+  jambe qui a une autre source n'y apparaît que lorsque cette source ne l'a pas servie.
+* **Ligne de commande** :
+
+```powershell
+market-monitor quote set ITRX_XOVER 287,5               # date par défaut : jour ouvré précédent
+market-monitor quote set ITRX_MAIN 55.3 --date 2026-10-06
+market-monitor quote list                               # dernières saisies
+market-monitor quote import historique.csv              # date;ITRX_MAIN;ITRX_XOVER (export Excel FR accepté)
+market-monitor quote delete ITRX_MAIN 2026-10-06
+```
+
+La variation 1J apparaît dès deux saisies consécutives ; le z-score demande environ trois
+mois d'historique (importer un historique Excel l'apporte d'emblée). Une saisie oubliée se
+voit comme une cotation périmée (*). Pour rendre saisissable un autre instrument, lui ajouter
+`manual: <IDENTIFIANT>` dans ses `tickers`.
+
+### 5.5 Titres des indices (top movers, largeur de marché)
+
+**Compositions** : un fichier par indice dans `config/constituents/` (Euro Stoxx 50, CAC 40,
+DAX, FTSE MIB, IBEX 35, S&P 500, Nasdaq 100 ; Stoxx 600 en groupe `extended`). Par titre :
+symbole Yahoo (`MC.PA`), nom, ISIN, secteur, poids (% de l'indice), place (code MIC, pour le
+calendrier de séances) et devise ; la **date de la composition** est affichée avec les movers.
+
+| Indice | Source | Poids |
+|---|---|---|
+| S&P 500, Stoxx 600 | fichier des positions de l'ETF iShares (IVV, EXSA), URL dans le YAML ; S&P 500 : liste Wikipedia en secours | ceux de l'ETF (capitalisation avec Wikipedia) |
+| Nasdaq 100 | liste Wikipedia (le plan FMP gratuit ne sert pas `nasdaq-constituent`) | capitalisation (Yahoo) |
+| Euro Stoxx 50, CAC 40, DAX, FTSE MIB, IBEX 35 | liste de départ fournie (fin 2025, **à vérifier**) | capitalisation (Yahoo) |
+
+Un ETF iShares trouvé pour un indice tenu à la main se branche par `refresh.ishares_url`
+(page de l'ETF sur ishares.com → « Positions » → lien de téléchargement CSV). Si le pare-feu
+bloque ishares.com, télécharger le fichier dans le navigateur puis
+`market-monitor constituents import FICHIER --index SXXP`. Quand ishares.com renvoie une page
+au lieu du fichier (page d'entrée, page du proxy), elle est enregistrée dans
+`.cache/equities/debug/<INDICE>_reponse.html` et son titre est affiché. Les poids par
+capitalisation totale sont une approximation (l'indice pondère par le flottant) ; l'écart se lit
+dans le résidu des contributions (§ 8.3). Ils ne sont publiés que si Yahoo couvre au moins 80 %
+des titres : sinon la composition est laissée telle quelle (liste tenue à la main) ou enregistrée
+sans poids (liste Wikipedia / FMP), avec le motif.
+
+**Proxy d'inspection SSL** : Yahoo refuse alors le certificat (« self signed certificate in
+certificate chain »). Les commandes s'arrêtent dès les premiers titres avec ce motif, sans le
+détail ligne à ligne de yfinance. Relancer avec `--contourner-ssl` (réseau de confiance), ou
+poser `MARKET_MONITOR_INSECURE_SSL=1` / `MARKET_MONITOR_CA_BUNDLE` dans `.env` pour que la tâche
+du matin en profite aussi (§ 4).
+
+```powershell
+market-monitor constituents list                  # indices, titres, date et méthode des poids
+market-monitor constituents refresh [--index CAC] [--contourner-ssl]  # composition / poids
+market-monitor constituents check                 # chaque symbole répond-il sur Yahoo ?
+market-monitor equities refresh [--contourner-ssl]  # cours des titres (hors Stoxx 600)
+market-monitor equities refresh --avec-stoxx600   # + ~600 titres (bouton dédié dans la vue)
+market-monitor equities status                    # titres avec cours, dernière clôture
+```
+
+**Cours** : clôtures, ouverture, plus haut, plus bas, volume et splits par Yahoo, stockés dans
+`.cache/equities` (un parquet par champ, lu en moins d'une seconde : les vues n'attendent
+jamais le réseau). Budget de requêtes (plan FMP gratuit à 250 appels / jour : Yahoo seul) :
+
+| | Titres | Premier chargement (~13 mois) | Chaque matin |
+|---|---|---|---|
+| Indices « core » (5 européens, S&P 500, Nasdaq 100) | ~700 (~180 Europe, ~520 US) | ~18 téléchargements Yahoo de 40 titres | idem, dernière semaine seulement |
+| + Stoxx 600 | ~+430 (le reste du 600) et ses devises | ~11 téléchargements de plus | idem |
+
+Pause de 2 s entre deux téléchargements (`equities.pause_s`), arrêt propre si Yahoo refuse
+(limite de requêtes, pare-feu) et **reprise** au lancement suivant là où il s'est arrêté. Un
+historique réajusté par Yahoo après un split (cours passés divisés) est détecté par
+comparaison avec le cache et rechargé en entier : pas de faux −50 %. La tâche planifiée
+(`scripts\daily_macro.bat`) lance `equities refresh` avant la daily macro.
+
+**Calendriers** : `exchange_calendars` (hors ligne) donne la dernière séance close de chaque
+place ; un titre sans cotation sur une séance de sa place est signalé et non compté
+(§ 8.3) ; un jour férié local n'attend rien.
+
+## 6. Référentiel et conventions
+
+Chaque ligne du monitor est un **identifiant canonique** (`SX5E`, `BUND_10Y`, `OAT_BUND_10Y`)
+décrit une seule fois :
+
+| Champ | Rôle |
+|---|---|
+| `class` | `equity`, `rates`, `credit`, `fx`, `commodities`, `volatility`, `crypto` |
+| `group` | sous-bloc d'affichage (« Europe », « Pentes », « Secteurs Stoxx 600 »…) |
+| `quote` | `price` → variations en **%** ; `yield` (niveau en %) et `spread` (niveau en pb) → variations en **pb** ; `vol` → variations en **points** |
+| `change` | surcharge de la convention (`pct`, `bp`, `abs`) |
+| `tickers` | ticker natif par provider, avec `scale` (conversion d'unité) et `proxy` (ETF, future…) |
+| `derived` | combinaison linéaire d'autres lignes : spreads, pentes, papillons |
+
+Les `defaults` par classe d'actifs évitent la répétition. Le chargement **refuse** tout
+référentiel incohérent (provider inconnu, `bp` sur un prix, jambe de dérivé inconnue ou
+elle-même dérivée, jambes de types différents…) et liste toutes les erreurs d'un coup.
+
+Instruments dérivés, sur dates communes uniquement (pas de forward-fill) :
+
+$$
+L^{\text{dérivé}}_t = m \sum_i w_i \, L^{(i)}_t
+\qquad\text{ex. } \text{OAT-Bund}_t = 100\,\big(y^{\text{OAT}}_t - y^{\text{Bund}}_t\big)\ \text{pb}
+$$
+
+Contrôles de données :
+
+* `scale` est appliqué selon le provider **réellement utilisé** (ex. une source qui coterait
+  le 10 ans US ×10) ;
+* un niveau hors des bornes plausibles du type de cotation (rendement hors $[-5\%, 30\%]$…)
+  lève un warning « check ticker scale » ;
+* un proxy (ETF iShares pour les secteurs, future pour l'or) est signalé dans la colonne `proxy`.
+
+Watchlists (`config/watchlists.yaml`) : identifiants, `"*"`, `"class:rates"`, `"group:Pentes"`.
+`daily_macro` reprend les bandeaux de la revue (indices, 10 ans, marchés clés).
+
+## 7. Moteur de performances
+
+Pour une date d'arrêté $T$ et un instrument de série $(L_t)$ :
+
+* **Niveau** : $L_0$, dernier print $\le T$, daté $t_0$ (affiché : un print de la veille
+  à 8h30 est normal ; la colonne `stale` passe à vrai au-delà de 2 jours ouvrés).
+* **Références** $L_h$ = dernier print $\le$ date cible :
+
+| Horizon | Date cible |
+|---|---|
+| 1J | print précédant $t_0$ (clôture précédente **du marché concerné**) |
+| 1S | $t_0 - 7$ jours calendaires (même jour de semaine) |
+| MTD | dernier jour du mois précédant $T$ |
+| YTD | 31 décembre de l'année précédant $T$ |
+
+  Si le print de référence est à plus de 7 jours de sa cible (trou de données), la
+  variation vaut `NaN` plutôt qu'un chiffre trompeur.
+
+* **Variations** :
+
+$$
+\Delta^{\%} = 100\left(\frac{L_0}{L_h} - 1\right),\qquad
+\Delta^{\text{pb}} = k\,(L_0 - L_h),\ k = \begin{cases}100 & \text{rendement en \%}\\ 1 & \text{spread en pb}\end{cases},\qquad
+\Delta^{\text{abs}} = L_0 - L_h
+$$
+
+* **Z-score** d'une variation $x$ couvrant $n$ pas quotidiens. $\mu$ et $\sigma$ sont estimés
+  sur les $N = 252$ variations quotidiennes (même convention) **jusqu'à la date de
+  référence** — hors échantillon : le choc du jour ne gonfle pas son propre $\sigma$.
+  Sous hypothèse i.i.d., la variation sur $n$ pas a pour moyenne $n\mu$ et écart-type $\sigma\sqrt{n}$ :
+
+$$
+z = \frac{x - n\,\mu}{\sigma\sqrt{n}}
+$$
+
+  `NaN` si moins de 60 observations ou $\sigma = 0$. `zscore_demean: false` impose $\mu = 0$
+  (mouvement exprimé en nombre de sigmas). Les z-scores sont calculés en 1J et 1S.
+
+### Exemple chiffré (test `test_hand_computed_example`)
+
+Arrêté au lundi 05/10/2026, Bund 10 ans (rendement en %) :
+
+| Date | 31/12/2025 | 25/09 | 30/09 | 01/10 | 02/10 |
+|---|---|---|---|---|---|
+| $y$ | 2,50 | 2,55 | 2,60 | 2,65 | **2,70** |
+
+$L_0 = 2{,}70\%$ au 02/10 (pas de print le lundi au moment du calcul) :
+
+* 1J : $100 \times (2{,}70 - 2{,}65) = +5$ pb
+* 1S : cible 25/09 → $+15$ pb · MTD : cible 30/09 → $+10$ pb · YTD : cible 31/12/2025 → $+20$ pb
+
+Euro Stoxx 50 sur les mêmes dates (4 900 → 5 600) : 1J $= 100\,(5600/5500 - 1) = +1{,}82\%$,
+YTD $= +14{,}29\%$.
+
+Z-score : si les 252 variations quotidiennes du Bund ont $\mu = 0$ et $\sigma = 3$ pb,
+un choc de $+30$ pb donne $z_{1J} = 30/3 = 10$ ; une hausse de $+15$ pb sur une semaine
+de 5 séances donne $z_{1S} = 15/(3\sqrt{5}) \approx 2{,}2$ — notable, pas extrême.
+
+## 8. Dashboard
+
+```powershell
+market-monitor ui              # ou : streamlit run app.py (depuis la racine, pour le thème)
+```
+
+Neuf vues, choisies sous le titre : **Séance d'hier** (vue d'ouverture, § 8.0), **Vue
+d'ensemble**, **Top movers** (§ 8.3), **Fiche** instrument (§ 8.1), **Courbes** de taux (§ 8.2), **Historique**, **Corrélations** (§ 9), **Alertes** (§ 11),
+**Daily macro** (§ 10).
+![Vue d'ensemble (données synthétiques)](docs/dashboard.png)
+
+La vue d'ensemble, de haut en bas :
+
+1. **En-tête** : barre de titre (chaîne de sources, mode de connexion) puis quatre tuiles —
+   date d'arrêté, nombre d'instruments, dernière cotation, lignes sans cotation récente.
+2. **Mouvements marquants** : les plus fortes variations de la séance classées par $|z_{1J}|$
+   (lignes périmées exclues), la base de la daily macro.
+3. **Tableaux par classe d'actifs, façon Koyfin** (pleine largeur) : dernier cours (taux en %,
+   spreads en pb), variations **1J, 1S, 1M, 3M, YTD, 1A** en % pour les prix et en pb pour les
+   taux et spreads (unité dans l'en-tête quand elle est commune), **sparkline** des clôtures
+   du dernier mois, **barre 52 semaines** (plus bas et plus haut sous la barre, point à la
+   dernière clôture, ambré à moins de 5 % d'un extrême), **écart au plus haut** 52 semaines,
+   z-score 1J (fond de la cellule 1J). 1M / 3M / 1A : même jour un, trois ou douze mois
+   calendaires avant la dernière cotation. La date ne s'affiche que pour une cotation ancienne
+   (ligne en italique grisé) ; † : variation à vérifier. **Sélectionner une ligne** (case à
+   gauche) ouvre sa fiche instrument.
+4. **Heatmap** : une tuile par instrument, groupées par classe d'actifs, colorées par le
+   z-score 1J ou 1S (saturation à $|z| = 3$). Le z-score rend comparables un +1 % sur le DAX
+   et un +5 pb sur le BTP. Une tuile sans z-score fiable reste visible, en neutre.
+5. **Qualité des données** : répartition par source, données manquantes, avertissements,
+   proxies utilisés.
+
+Barre latérale : watchlist, date d'arrêté (pour refaire la revue d'un jour passé),
+« Actualiser les données ».
+
+**Rechargement manuel** (`ui.refresh: manual`, par défaut) : les sources (FMP, Yahoo…) sont
+interrogées à l'ouverture, puis **seulement** au clic sur « Actualiser les données ». Changer de
+vue, de période ou revenir sur une fiche réutilise ce qui a été chargé, sans limite de durée :
+aucun appel FMP consommé en naviguant. Seules les données jamais chargées (un instrument ou une
+période nouvelle) sont téléchargées. L'heure du dernier chargement est affichée sous le bouton.
+Clôtures uniquement : une séance encore ouverte à l'heure du dernier chargement reste sur la
+clôture précédente jusqu'au prochain « Actualiser ». Le lendemain, le premier affichage recharge.
+`ui.refresh: auto` rétablit l'ancien comportement (calculs gardés `ui.cache_ttl_minutes`,
+données du jour rechargées après `cache.intraday_ttl_minutes`).
+
+Choix visuels : fond graphite bleuté, ambre Bloomberg comme unique accent, hausse en
+sarcelle et baisse en corail plutôt que vert / rouge purs (plus lisible pour les
+daltonismes les plus courants), chiffres tabulaires, nombres au format français.
+
+### 8.0 La séance d'hier
+
+![La séance d'hier (données synthétiques)](docs/seance_hier.png)
+
+La vue d'ouverture (`ui.default_view: seance` dans `config.yaml` ; `overview` pour revenir à la
+vue d'ensemble) : la séance précédente en un écran, clôtures uniquement.
+
+- **Bandeau des indices** : Euro Stoxx 50, Stoxx 600, CAC 40, DAX, FTSE MIB, IBEX 35, S&P 500,
+  Nasdaq 100, Nikkei — variation 1J et niveau.
+- **Secteurs Stoxx 600** : les trois meilleurs et les trois moins bons.
+- **Taux souverains 10 ans** : niveau et variation J-1, pente 2s10s, spread contre le Bund et
+  leurs variations (pb).
+- **Plus forts z-scores** de la séance (sélectionner une ligne ouvre la fiche).
+- **Valeurs marquantes par indice** : trois hausses et trois baisses par indice (titres « À
+  vérifier » exclus et comptés à part).
+- **Change, matières premières, volatilité**, et la bande d'alertes.
+
+Chaque bloc se passe des autres : sans cours des titres (`equities refresh` pas encore lancé),
+sans courbes ou avec une watchlist réduite, il le dit et la vue s'affiche quand même.
+
+### 8.1 Fiche instrument
+
+![Fiche instrument (données synthétiques)](docs/fiche_instrument.png)
+
+Le **niveau réel** d'un instrument pris seul (indice, rendement en %, change, matière
+première, vol, crypto, spread en pb), là où l'*Historique* compare des variations. Ouverture
+directe par lien : `http://localhost:8501/?fiche=OAT_10Y`.
+
+* **Périodes** 1M, 3M, 6M, YTD, 1A, 3A, 5A, Max (mois calendaires ; YTD depuis le 31/12).
+  L'historique chargé couvre toujours 5 ans et 300 jours de plus, pour les statistiques 5A et
+  la moyenne 200 séances ; « Max » remonte jusqu'à 1990 par tranches (§ 5.3). Quand la source
+  habituelle est trop courte pour la période (FMP gratuit : 5 ans), la source la plus profonde
+  parmi celles du référentiel prend le relais, et la fiche le dit ; si l'historique de la
+  source commence après le début de la période, le graphique commence avec lui (mention sous
+  la fiche).
+* **Graphique** au style de la daily macro (zone sous la courbe, dernier cours étiqueté sur
+  l'axe, plus haut et plus bas de la période) ; **chandeliers** quand l'OHLC couvre au moins
+  90 % des séances (« Auto »), hebdomadaires au-delà de 18 mois, mensuels au-delà de 8 ans ;
+  **moyennes mobiles 50 et 200 séances** ; **second instrument** superposé, sur le même axe
+  pour deux taux ou deux spreads, sinon sur un axe à gauche.
+* **Taux souverains** : second graphique du **spread contre le Bund** de même maturité, en pb
+  (champ `curve: {country, tenor}` du référentiel).
+* **Écart entre deux obligations** : superposer un autre taux (OAT 10 ans contre BTP 10 ans,
+  2 ans contre 10 ans d'un même pays, maturités et pays au choix) affiche l'écart
+  $100\,(y - y_{\text{superposé}})$ en pb, avec son niveau et ses variations 1J à 1A ; entre deux
+  spreads, leur différence en pb.
+* **Statistiques sur clôtures** : variations 1J à 5A dans la convention de l'instrument,
+  plus haut et plus bas 52 semaines et écart, volatilité réalisée 1M et 3M annualisée
+  ($\sigma_{\text{quotidien}}\sqrt{252}$, en % pour un prix, en pb pour un taux), pire
+  mouvement de la période (baisse depuis le plus haut pour un prix, hausse depuis le plus bas
+  pour un taux ou un spread : la perte du porteur), écart aux moyennes 50 / 200.
+* **Clôtures quotidiennes** de la période (O/H/B/C, variation, volume), téléchargeables en
+  CSV (séparateur `;`, virgule décimale : s'ouvre tel quel dans Excel en français) ou Excel.
+* Clôtures uniquement : avant la clôture de sa place, la cotation du jour est ignorée.
+* Sous la fiche : source, profondeur en cache (« maximum de la source atteint »), notes de
+  qualité.
+
+### 8.2 Courbes de taux
+
+![Courbes de taux, version imprimable (données synthétiques)](docs/courbes_taux.png)
+
+Bund, OAT, BTP, Bonos et UST (2, 5, 10 et 30 ans ; Gilt et JGB 10 ans en option), à partir
+des points `curve: {country, tenor}` du référentiel et des mêmes clôtures que la vue
+d'ensemble (règle « clôtures uniquement » comprise) :
+
+* **courbes du jour** de tous les pays sélectionnés sur un même graphique ;
+* **aujourd'hui contre J-1, S-1 et M-1**, un panneau par pays (J-1 : séance précédente de ce
+  marché ; S-1 : une semaine avant ; M-1 : même jour un mois avant) ;
+* **histogramme des variations par maturité**, en pb, depuis J-1, S-1 ou M-1 ;
+* **pentes** 2s10s, 5s30s et 2s30s par pays : $100\,(y_{\text{long}} - y_{\text{court}})$ et
+  leurs variations ;
+* **spreads contre le Bund** par maturité : $100\,(y - y_{\text{Bund}})$ et leur variation ;
+* tableau des niveaux (%, variation en pb) ;
+* **à vérifier** : une courbe faite de points de dates différentes (un point resté sur la
+  veille) ou de plusieurs sources (Bund servi par la Bundesbank, le reste par CNBC) est
+  signalée, car une pente y montrerait un faux mouvement ;
+* PNG imprimable des courbes (repris par la daily macro).
+
+### 8.3 Top movers
+
+![Top movers (données synthétiques)](docs/top_movers.png)
+
+Par indice (Euro Stoxx 50, CAC 40, DAX, FTSE MIB, IBEX 35, S&P 500, Nasdaq 100 ; Stoxx 600
+après le bouton **Charger le Stoxx 600**, jamais au démarrage), sur la **dernière séance close
+de la place de l'indice** (Paris pour le CAC, Xetra pour l'Euro Stoxx 50 et le Stoxx 600, New
+York pour le S&P 500 ; à la date d'arrêté choisie pour une revue passée) :
+
+- **En-tête** : variation de l'indice (% et points), séance et veille, hausses / baisses,
+  méthode des poids et date de la composition.
+- **Plus fortes hausses / baisses** (10 de chaque) : variation, cours, volume du jour rapporté
+  à la moyenne des 20 séances précédentes (ambré à 2× et plus), secteur, **contribution en
+  points**. Sélectionner une ligne ouvre la **fiche du titre** (identifiant `EQ:MC.PA`, aussi
+  par lien `?fiche=EQ:MC.PA`) : historique Yahoo, FMP en profondeur si le titre y est listé.
+- **Contributions** : les plus fortes contributions positives et négatives.
+- **Performance moyenne par secteur** (équipondérée ; moyenne pondérée et contribution du
+  secteur dans `IndexMovers.sectors()`).
+- **Largeur de marché** : hausses, baisses, inchangés, % de titres au-dessus de leurs moyennes
+  50 et 200 séances, nouveaux plus hauts et plus bas 52 semaines.
+
+Calcul, pour un titre $i$ de clôtures $P_{i,t}$ et $P_{i,t-1}$ :
+$r_i = P_{i,t}/P_{i,t-1} - 1$ (converti en euros pour une cotation en autre devise dans un
+indice en euros : $(1+r_i)\,X_t/X_{t-1} - 1$) ; poids de la veille dérivé des cours depuis la
+date de composition $w_{i,t-1} \propto w_{i,d_0} P_{i,t-1}/P_{i,d_0}$ ; contribution
+$c_i = w_{i,t-1}\, r_i\, I_{t-1}$. La somme des contributions est comparée à la variation
+réelle de l'indice : un écart de plus de 15 % est signalé (« poids à rafraîchir »).
+
+**Garde-fous** (le titre va dans « À vérifier », jamais dans les movers, la largeur ou les
+contributions) : $|r_i|$ au-delà de `equities.max_abs_return_pct` (25 % par défaut), split
+signalé par Yahoo sur la séance, rapport de cours typique d'un split (2:1, 3:1, 1:10…),
+volume nul. Un titre sans cours sur une séance tenue par sa place est **non coté** (signalé,
+non compté) ; une place fermée ce jour-là (férié local) est simplement ignorée. Le bouton
+**Contrôler avec FMP** compare les titres affichés à une seconde source (un appel par titre,
+plan gratuit : 250 / jour) ; un écart de plus de 1 point les passe en « À vérifier ».
+« Actualiser les cours des titres » recharge les indices principaux (dernière semaine
+seulement pour les titres déjà en cache).
+
+## 9. Historique et corrélations
+
+![Historique (données synthétiques)](docs/historique.png)
+
+### 9.1 Comparaison multi-actifs
+
+Une base 100 n'a de sens que pour un prix : un taux qui passe de 0,5 % à 1 % ferait
+« +100 % ». Chaque convention a donc son panneau, avec la même origine $t_b$ :
+
+$$
+\text{prix : } 100\,\frac{L_t}{L_{t_b}} \qquad
+\text{taux, spreads : } k\,(L_t - L_{t_b})\ \text{pb} \qquad
+\text{volatilité : } L_t - L_{t_b}\ \text{pts}
+$$
+
+$t_b$ est la première date où **toutes** les séries sélectionnées cotent, pour que les
+courbes partent ensemble (une série qui démarre tard est signalée). Le tableau sous le
+graphique donne, sur la période : début, fin, variation, volatilité annualisée
+$\hat\sigma_{1J}\sqrt{252}$ (en %, pb ou pts), perte maximale
+$\min_t \big(L_t / \max_{s \le t} L_s - 1\big)$ pour les prix, plus bas et plus haut.
+
+### 9.2 Corrélations glissantes
+
+![Corrélations (données synthétiques)](docs/correlations.png)
+
+* **Rendements cohérents avec les conventions** : % pour les prix, pb pour les taux et
+  spreads, points pour la vol. Le signe se lit directement : $\rho > 0$ entre le SX5E et le
+  Bund 10 ans = le taux monte quand les actions montent (régime « risk-on / taux réels »).
+* **Calendriers** : grille lundi-vendredi, forward-fill borné à 3 jours (un férié donne une
+  variation nulle pour le marché fermé, rattrapée le lendemain).
+* **Asynchronisme** : Tokyo clôture avant l'ouverture de New York, ce qui biaise les
+  corrélations quotidiennes vers zéro. La fréquence **hebdomadaire** (vendredi à vendredi)
+  est l'alternative robuste.
+* **Fenêtre** : $\rho_{ij}$ de Pearson sur les $N$ dernières périodes (1M / 3M / 6M / 1A en
+  quotidien, 6M / 1A / 2A en hebdomadaire) ; une paire doit être observée sur 80 % de la
+  fenêtre, sinon `NaN`.
+* **Variation sur un mois** : $\Delta\rho = \rho_T - \rho_{T-\ell}$ avec $\ell$ = 21 séances
+  (4 semaines), pour repérer les changements de régime.
+* **Regroupement** : clustering hiérarchique (lien moyen, ordre optimal des feuilles) sur la
+  distance $d_{ij} = \sqrt{(1 - \rho_{ij})/2}$, qui vaut 0 pour $\rho = 1$ et 1 pour
+  $\rho = -1$ : les actifs qui bougent ensemble apparaissent en blocs.
+* **Paire** : corrélation glissante de deux instruments sur deux ans d'historique.
+
+**Exemple chiffré** (test `test_compare_common_origin_groups_and_stats`) : A cote 100, 110, 99,
+B ne cote qu'à partir du 2e jour (50, 55), le Bund cote 2,00 %, 2,10 %, 2,05 %. L'origine
+commune est le 2e jour : A devient 100 puis 90, B 100 puis 110, le Bund 0 puis −5 pb.
+
+## 10. Export daily macro
+
+![Bandeaux PNG (données synthétiques)](docs/daily_macro_exemple.png)
+
+```powershell
+market-monitor daily-macro --as-of 2026-10-05     # ou la vue « Daily macro » du dashboard
+```
+
+Un seul calcul de performances alimente trois fichiers, `daily_macro_<date>` :
+
+| Fichier | Contenu | Usage |
+|---|---|---|
+| `.xlsx` | feuilles *Daily macro* (bandeaux), *Mouvements*, *Texte*, *Données* | coller dans la revue, auditer un chiffre |
+| `.png` | les bandeaux en tuiles, fond blanc, largeur A4 | insérer tel quel dans le PDF |
+| `.txt` | mouvements marquants, une ligne par instrument, points à vérifier | relecture, copier-coller |
+
+**Mise en page** (`config/daily_macro.yaml`) : titres et instruments des bandeaux
+(indices, taux 10 ans, marchés clés, spreads), variations affichées (`chg_1d`, `chg_ytd`…),
+règles des mouvements marquants (univers, nombre, seuil $|z_{1J}|$, seuil « fort »).
+
+**Format de la revue** : `format` règle l'écriture des nombres (`thousands_separator: false`
+→ `6272,95` ; `compact_units: true` → `5,27%`, `−5bps` ; `bp_unit: bps`, au singulier « bp »
+quand la variation vaut au plus 1). Chaque ligne d'un bandeau peut porter ses options, et un
+bandeau leur valeur par défaut :
+
+```yaml
+  - title: Taux 10 ans
+    decimals: 2            # décimales du niveau
+    change_decimals: 0     # décimales de la variation
+    instruments:
+      - {id: UST_10Y, label: États-Unis}
+  - title: Marchés clés
+    change_decimals: 1
+    instruments:
+      - {id: GOLD, label: Or, decimals: 0, suffix: " $"}   # 4164 $
+      - {id: VIX, change: pct}                            # VIX en % plutôt qu'en points
+```
+
+Les mêmes conventions s'appliquent au texte, au PNG et aux formats de nombre Excel (où l'unité
+reste « bps »). Un mouvement marquant qui figure dans un bandeau est écrit avec les mêmes
+décimales.
+
+**Excel auditable** : les niveaux de référence et leurs dates sont dans *Données* ; les
+variations de *Daily macro* sont des **formules** sur ces cellules, sous la convention de
+chaque ligne (une correction de niveau se propage) :
+
+$$
+\text{prix : } \frac{L_0}{L_h} - 1 \ (\text{format } {+0.00\%}) \qquad
+\text{taux, spreads : } (L_0 - L_h)\,k \ (\text{format } {+0.0 \text{ pb}})
+$$
+
+Couleurs par signe en mise en forme conditionnelle, Arial partout, lignes périmées en
+italique gris. Vérifié par recalcul LibreOffice : 0 erreur, valeurs identiques au moteur.
+
+**Texte en langage de marché** : hausse / baisse pour les prix, **tension / détente** pour les
+taux, **écartement / resserrement** pour les spreads, « fort(e) » au-delà de $|z| = 2{,}5$ :
+
+```
+- Bund 10 ans : forte tension de 12,4 pb à 2,824 % (z +3,1)
+- Spread OAT-Bund 10 ans : resserrement de 2,3 pb à 72,7 pb (z −1,6)
+```
+
+La section « À vérifier avant diffusion » liste, pour les lignes publiées (bandeaux et
+mouvements marquants), tout ce qui doit être vu avant envoi : donnée manquante ou périmée,
+mouvement suspect, changement de contrat, proxy, source de secours, jambes décalées (§ 10.1).
+
+**Graphiques** (section `charts` de `daily_macro.yaml`) : historiques de cours de clôture
+— Euro Stoxx 50, S&P 500, Bund et OAT 10 ans (même graphique), OAS High Yield Euro et US (indices ICE BofA, comme sur
+FRED, en pb), Brent en YTD, et VIX sur 3 mois. Présentation façon Investing : zone remplie
+sous la courbe, échelle ajustée aux cours de la période (pas depuis zéro), pointillé et
+étiquette du dernier cours sur l'axe de droite. La **variation de la séance** est indiquée
+sous le titre ; le dernier segment, le dernier point et l'étiquette prennent sa couleur
+(hausse / baisse). Le graphique HY-IG reste disponible en une ligne (commentée dans le fichier).
+Pour la lecture fine : graduations de dates adaptées à la fenêtre (semaine par semaine de 2 à
+6 mois, jour par jour sous deux semaines, mois puis années au-delà), axe vertical plus dense
+dont les décimales suivent l'amplitude, plus haut et plus bas de la période étiquetés (niveau
+et date), réticule au survol avec la date et la valeur exactes. Dans la vue *Daily macro*,
+la période se change graphique par graphique (1M à 5A, YTD, ou « Depuis une date… ») ;
+*Télécharger les graphiques (PNG)* reprend les périodes choisies. L'export en ligne de
+commande écrit en plus `<préfixe>_<date>_graphiques.png` avec les périodes du fichier.
+
+```yaml
+charts:
+  - {title: OAS High Yield, instruments: [EUR_HY_OAS, US_HY_OAS], labels: [Euro HY, US HY]}
+  - {title: VIX, instruments: [VIX], period: 3M}
+  - {title: Bund 10 ans, instruments: [BUND_10Y], start: 2026-03-01}   # date de début fixe
+```
+
+Un graphique a un seul axe : n'y regrouper que des instruments de même unité (au plus 4).
+
+**Clôtures uniquement, bandeaux et graphiques identiques.** Les graphiques réutilisent
+exactement les séries du bandeau (seul l'historique plus ancien d'une fenêtre longue, ou un
+instrument hors bandeau, est chargé à part) : un graphique et sa ligne affichent toujours le
+même dernier cours. Quand la revue est datée du jour, un cours du jour dont la séance n'est
+pas close à l'heure du calcul (section `closing_prices` de `daily_macro.yaml`, heures de
+Paris par classe, groupe ou instrument) est ignoré ; une ligne publiée restée sur une
+clôture plus ancienne que celle attendue (source qui publie tard, comme la Bundesbank tôt le
+matin, ou jour férié local) est listée dans « À vérifier avant diffusion ». Exemple : à 9 h, l'Euro Stoxx 50, le Bund et
+l'OAT montrent la clôture de la veille, le Nikkei celle du jour. La vue *Daily macro*
+indique les lignes concernées. Le reste du dashboard continue d'afficher les cours en séance.
+
+### 10.0 Valeurs marquantes et courbes (options v1.6)
+
+Deux options de `config/daily_macro.yaml`, **désactivées par défaut** (l'export reste
+identique tant qu'elles le sont) :
+
+- `stocks` : section **« Valeurs marquantes »** du texte, une phrase par indice (CAC 40, Euro
+  Stoxx 50, S&P 500 par défaut), et feuille du même nom dans l'Excel :
+  > CAC 40 (+0,6%) : en tête Kering (+3,6%), TotalEnergies (+3,4%), BNP Paribas (+3,0%) ;
+  > en queue LVMH (−3,0%), Société Générale (−1,7%), Vinci (−1,2%).
+
+  Mêmes garde-fous que la vue Top movers (§ 8.3). Avec `verify: true` et FMP actif, les
+  candidats sont comparés à FMP : un écart de plus de `tolerance_pp` écarte le titre (le
+  suivant prend sa place) et le signale ; un titre que FMP ne sert pas reste cité mais part
+  dans « À vérifier avant diffusion », comme les titres exclus et une séance des titres
+  différente de celle de l'indice.
+- `curves_chart` : PNG imprimable des courbes (`daily_macro_<date>_courbes.png`), un panneau
+  par pays (aujourd'hui contre J-1 / S-1 / M-1) et l'histogramme des variations ; même règle
+  de clôtures que les bandeaux. Aussi téléchargeable depuis la vue Daily macro.
+
+### 10.1 Contrôles avant publication
+
+![Bandeaux avec lignes à vérifier (données synthétiques)](docs/daily_macro_controles.png)
+
+Un chiffre faux dans une revue diffusée coûte plus cher qu'un chiffre en retard. Quatre
+garde-fous, paramétrés dans la section `quality` de `config.yaml` :
+
+**1. Mouvement suspect (z-score hors norme).** Un 1J de $|z_{1J}| \ge 8$ (`suspect_abs_z`) que
+n'explique aucun changement de contrat est bien plus souvent une mauvaise cotation (tick
+aberrant, erreur d'échelle) qu'un mouvement de marché. La ligne est marquée *suspecte*.
+
+**2. Contrôle croisé avec une seconde source.** Les lignes publiées (bandeaux, et deux fois
+plus de candidats aux mouvements marquants que de places) sont comparées, à la même date
+$t_0$, à un autre provider ou à une autre alternative de leur chaîne (CNBC contre FRED…) :
+
+$$
+\text{écart de niveau : } \Big|\frac{L_A}{L_B} - 1\Big| > 5\,\% \ \text{(prix)}
+\quad\text{ou}\quad k\,|L_A - L_B| > 25 \text{ pb (taux, spreads)}
+$$
+
+$$
+\text{écart de 1J : } \frac{|\Delta_A - \Delta_B|}{\hat\sigma_{1J}} > 4
+$$
+
+les deux variations étant mesurées entre les deux mêmes dates. Un écart rend la ligne
+suspecte (« 1J +4,50 % contre +0,10 % sur Yahoo »), et un spread ou une pente est suspect dès
+qu'une de ses jambes l'est. Les proxies ne sont jamais comparés (un ETF n'est pas son indice).
+Une seconde source qui ne répond pas, ou pas pour $t_0$, laisse la ligne « indisponible »,
+jamais « ok ». Au plus deux sources sont essayées par ligne (un pare-feu ne coûte pas plus de
+deux délais d'attente). `cross_check: false` désactive le contrôle.
+
+**3. Changements de contrat.** Les génériques front-month (Brent, WTI, TTF : champ `roll` du
+référentiel) sautent à l'échéance d'un contrat au suivant ; ce saut est un écart de calendrier,
+pas un mouvement. Calendriers des bourses (jours ouvrés lundi-vendredi) :
+
+| Règle | Dernier jour de cotation du front-month | Jour de changement |
+|---|---|---|
+| `brent` (ICE) | dernier jour ouvré du 2e mois précédant l'échéance | 1er jour ouvré du mois |
+| `wti` (NYMEX CL) | 3 jours ouvrés avant le 25 du mois précédent (4 si le 25 est chômé) | jour ouvré suivant |
+| `ttf` (ICE Endex) | 2 jours ouvrés avant le 1er jour du mois de livraison | dernier jour ouvré du mois |
+
+Les jours fériés des bourses n'étant pas modélisés, le jour suivant est aussi couvert. Ces
+jours sont exclus de l'estimation de $\hat\sigma$, et un 1J (ou 1S) qui en contient un est
+marqué *changement de contrat*.
+
+**4. Jambes décalées.** Un spread ou une pente n'est calculé que sur les dates communes à ses
+jambes ; si l'une est en retard, la ligne le dit (« dernière date commune 30/09, Bund 10 ans
+au 01/10 ») au lieu d'afficher discrètement la veille.
+
+**Effets** d'une ligne suspecte ou en changement de contrat (marque † partout) :
+
+* exclue des **mouvements marquants** (dashboard et export) et dessinée en neutre dans la heatmap ;
+* aucune alerte `zscore` / `change` (ni `level` si suspecte) : la règle `suspect` la signale à
+  la place, pour vérification ;
+* dans l'export : « à vérifier » en fin de ligne dans le texte, † et 1J en ambre sur le PNG avec
+  une note de bas de page, ligne surlignée en ambre dans l'Excel avec la raison en commentaire,
+  et colonnes *Source effective*, *Contrôle 2e source*, *Suspect*, *Roll 1J* et *À vérifier*
+  dans la feuille *Données* ;
+* dans le dashboard : † sur la ligne, 1J en ambre, détail dans *Qualité des données*.
+
+Cas couverts par `tests/test_publication_safeguards.py` et, de bout en bout sur le référentiel
+complet (mauvaise cotation sur le S&P 500, changement de contrat Brent, OAT 10 ans en retard
+d'une séance), par `tests/test_publication_end_to_end.py`.
+
+## 11. Alertes
+
+![Vue Alertes (données synthétiques)](docs/alertes.png)
+
+Les règles (`config/alerts.yaml`) sont évaluées sur le tableau de performances, sans
+requête supplémentaire. Cinq types :
+
+| Type | Condition | Exemple |
+|---|---|---|
+| `zscore` | $\lvert z_h \rvert \ge z_{\min}$, $h \in \{1J, 1S\}$ ; `critical_abs_z` escalade en critique ; `direction` up / down | tout mouvement de séance $\ge 2{,}5\sigma$, critique $\ge 4\sigma$ |
+| `level` | $L_0 > s$ ou $L_0 < s$, en unité du référentiel ; `cross` : seulement si $L_{1J} \le s < L_0$ (franchissement sur la séance) | spread BTP-Bund $> 150$ pb ; UST 2s10s passe sous 0 |
+| `change` | $\Delta_h > s$, $\Delta_h < s$ ou $\lvert\Delta_h\rvert > s$, dans la convention (% / pb / pts), $h \in$ 1J, 1S, MTD, YTD | Brent $\lvert\Delta_{1J}\rvert > 4\%$ ; Bund 10 ans $\lvert\Delta_{1S}\rvert > 15$ pb |
+| `stale` | dernière cotation trop ancienne | donnée périmée dans la daily macro |
+| `suspect` | mouvement suspect ou écart entre sources (§ 10.1) | donnée à vérifier avant diffusion |
+
+Garde-fous :
+
+* Sélecteurs d'instruments : identifiants, `*`, `class:`, `group:`, `watchlist:`.
+* Une règle `change` ou `level` ne peut pas mélanger des unités (ex. SX5E en % et Bund en
+  pb) : le seuil serait ambigu, le chargement le refuse.
+* Les lignes périmées ne déclenchent ni `zscore` ni `change` (pas d'alerte sur un vieux
+  mouvement) ; une ligne sans donnée est listée comme « non évaluée », jamais comme calme.
+* Une donnée suspecte ne déclenche aucune alerte de marché (`zscore`, `level`, `change`) :
+  seule la règle `suspect` la signale. Un horizon qui contient un changement de contrat ne
+  déclenche ni `zscore` ni `change` (un niveau reste valable).
+* Tri : gravité (critique, attention, info), puis ordre des règles, puis ampleur.
+
+Où les voir :
+
+* **Vue d'ensemble** : bandeau des alertes, celles de niveau / variation / qualité d'abord
+  (les mouvements inhabituels sont déjà dans « Mouvements marquants ») ;
+* **Vue Alertes** : compteurs par gravité, liste complète, tableau des règles (condition en
+  clair, nombre de déclenchements, instruments sans données) ;
+* **Daily macro** : bloc « Alertes du jour (usage interne) » en tête du texte et feuille
+  *Alertes* dans l'Excel, **jamais dans le PNG** destiné à la revue ;
+* **Ligne de commande**, pour une tâche planifiée Windows :
+  `market-monitor alerts --json alerts.json --fail-on critical` renvoie le code 3 si une
+  alerte critique est déclenchée.
+
+## 12. Intégration au terminal
+
+Le module s'installe comme un paquet (`pip install -e .`) et ne dépend d'aucun autre projet
+du terminal. Deux niveaux d'intégration :
+
+```python
+# moteur seul (autre UI, notebook, script)
+from market_monitor import MarketMonitor, load_settings
+from market_monitor.alerts import load_rules
+
+settings = load_settings()
+monitor = MarketMonitor.from_settings(settings)
+report = monitor.performance("daily_macro")        # DataFrame + diagnostics
+alerts = monitor.alerts(load_rules(settings.alerts_path, monitor.referential))
+comparison = monitor.comparison(["SX5E", "BUND_10Y"], "YTD")
+```
+
+```python
+# page Streamlit dans l'application multipage du terminal (suite du bloc précédent)
+from market_monitor.export import load_layout
+from market_monitor.ui.page import render_market_monitor
+
+render_market_monitor(
+    monitor, settings.ui, key="mm",
+    layout=load_layout(settings.daily_macro_path, monitor.referential),
+    rules=load_rules(settings.alerts_path, monitor.referential),
+)
+```
+
+La page n'appelle pas `st.set_page_config` et préfixe toutes ses clés de widgets par `key` :
+elle cohabite avec les autres modules (Valuation Screener, Pricing Lab, PTF Event Radar,
+Portfolio Intelligence). Les couches `data/` et `referential` sont réutilisables telles
+quelles par les futurs modules courbes de taux et surfaces de volatilité.
+
+## 13. Ligne de commande
+
+| Commande | Rôle |
+|---|---|
+| `market-monitor doctor [--online]` | vérifie fichiers, cache et providers (une donnée par provider avec `--online`) |
+| `market-monitor ui` | lance le dashboard depuis la racine (thème appliqué) |
+| `market-monitor perf --watchlist daily_macro [--as-of AAAA-MM-JJ]` | tableau de performances dans la console |
+| `market-monitor daily-macro [--as-of …] [--out DOSSIER]` | écrit l'Excel, le PNG et le texte |
+| `market-monitor alerts [--json F] [--fail-on warning\|critical]` | évalue les alertes |
+| `market-monitor fetch --provider P --tickers … [--start] [--end] [--no-cache]` | historique brut d'un provider |
+| `market-monitor snapshot --provider P --tickers …` | dernier cours brut |
+| `market-monitor check-referential` | valide le référentiel et les watchlists |
+| `market-monitor cache-clear [--provider P]` | vide le cache parquet |
+| `market-monitor depth [IDS…] [--load] [--start AAAA-MM-JJ]` | profondeur d'historique en cache par source (§ 5.3) |
+| `market-monitor constituents list\|refresh\|import\|check` | compositions des indices (§ 5.5) |
+| `market-monitor equities refresh [--avec-stoxx600] [--contourner-ssl]\|status` | cours des titres des indices (§ 5.5) |
+| `market-monitor quote set\|list\|import\|delete …` | saisie manuelle (iTraxx sans Bloomberg, § 5.4) |
+
+Codes retour : 0 succès, 1 données manquantes, 2 erreur de configuration ou d'usage,
+3 seuil d'alerte atteint. La sortie est forcée en UTF-8 (une redirection vers un fichier
+sous Windows échouerait sinon sur « − » ou les espaces fines).
+
+## 14. Qualité
+
+```powershell
+scripts\check.bat                        # ruff + mypy + pytest
+pytest --cov=market_monitor              # 480 tests, ~1 min, 94 % de couverture
+```
+
+* **Tous les tests sont hors ligne** : faux providers, faux module `blpapi` (sessions,
+  réponses partielles, timeouts, perte de session), sessions HTTP simulées (retries, 401,
+  429, clé masquée), données synthétiques pour le référentiel complet.
+* **Calculs vérifiés à la main** : exemple chiffré du moteur, base 100, z-scores, logique
+  du cache horodatée, formules Excel (recalcul LibreOffice : 0 erreur, valeurs égales au moteur).
+* **Fichiers livrés testés** : `instruments.yaml`, `watchlists.yaml`, `daily_macro.yaml` et
+  `alerts.yaml` du dépôt sont chargés et validés par la suite de tests.
+* **UI testée** avec l'`AppTest` de Streamlit : chaque vue est rendue sans exception, y
+  compris via le vrai `main()` sur la configuration du dépôt.
+* **Temps de chargement** (cache chaud, 84 instruments, ~870 titres de 7 indices, données
+  synthétiques) : performances ~1,1 s, courbes ~0,4 s, movers des 7 indices ~2,7 s (dont
+  ~1 s de calendriers au premier appel) : la séance d'hier s'affiche en moins de 10 s,
+  ensuite servie par le cache Streamlit. Le Stoxx 600 n'est jamais chargé au démarrage.
+* `ruff` (pycodestyle, pyflakes, bugbear, pyupgrade, isort) et `mypy` sans erreur ;
+  intégration continue sous Windows et Linux, Python 3.11 et 3.12.
+
+## 15. Dépannage
+
+| Symptôme | Cause probable et solution |
+|---|---|
+| « no available provider » | aucun provider utilisable : `market-monitor doctor`, puis `.env` ou `MARKET_MONITOR_PROVIDERS` |
+| « cannot start a Bloomberg session » | Terminal fermé ou non connecté, port 8194 différent dans `config.yaml` |
+| FMP 401 / 429 | clé invalide / quota du jour atteint : FMP passe au provider suivant |
+| FMP 402 / 403 sur un symbole | symbole hors abonnement : ligne servie par le fallback gratuit |
+| Avertissement « implausible level » | unité de la source différente du référentiel : ajuster `scale` du ticker |
+| Ligne en italique grisé | dernière cotation de plus de 2 jours ouvrés : jour férié local, ticker à vérifier |
+| † sur une ligne | variation de séance à vérifier : mouvement suspect, écart avec une seconde source ou changement de contrat (détail dans *Qualité des données* / « À vérifier avant diffusion ») |
+| « source de secours » dans les points à vérifier | la source préférée de la chaîne n'a pas répondu ; toute la série vient de la source de secours (§ 5.3) |
+| Contrôle 2e source « indisponible » | aucune autre source n'a répondu pour la même date (pare-feu, source en retard) : vérifier à la main |
+| Saut sur cuivre ou or | roll du contrat générique front-month (non modélisé pour ces deux contrats) |
+| « certificate verify failed » / « self signed certificate » sur toutes les sources | proxy d'inspection SSL : `network.ca_bundle` (ou, réseau de confiance, `insecure_ssl`), § 4 |
+| Erreur `zoneinfo` sous Windows | `pip install tzdata` |
+| Thème du dashboard absent | lancer via `market-monitor ui` ou depuis la racine du projet |
+| Donnée manifestement fausse après une correction | `market-monitor cache-clear --provider …` |
+
+Journal : `logs\market_monitor.log` (tournant, 1 Mo × 5), niveau réglable dans `config.yaml`.
+
+## 16. Limites et évolutions
+
+**Limites connues**
+
+* Le fallback gratuit ne couvre ni l'iTraxx (saisie manuelle) ni un MOVE fiable ; quelques
+  tickers sont marqués « à vérifier » dans le référentiel (TTF, iTraxx, ETF sectoriels).
+* Les sources MSCI (`msci:891800`) et CNBC Gilt / JGB (`cnbc:GB10Y-GB`, `cnbc:JP10Y-JP`) n'ont
+  pas pu être testées depuis l'environnement de développement : à confirmer avec *Tester la
+  connexion* ; en cas d'échec, la chaîne retombe sur le future `MME=F` (proxy signalé) ou Stooq.
+* Le z-score suppose des variations i.i.d. : en régime de volatilité élevée, un $\sigma$ sur
+  un an sous-estime le risque courant et gonfle les $|z|$ (queues épaisses).
+* Les corrélations quotidiennes entre fuseaux horaires éloignés sont biaisées vers zéro
+  (utiliser la fréquence hebdomadaire).
+* Le dashboard travaille sur des cours de clôture et le dernier print disponible, pas sur
+  un flux temps réel.
+* Calendriers de changement de contrat approchés (jours fériés des bourses ignorés, d'où une
+  fenêtre de deux jours) et limités au Brent, au WTI et au TTF ; cuivre et or non couverts.
+* Brent : contrat le plus traité, le suivant étant coté 5 jours ouvrés avant l'échéance
+  (`roll_ahead`). Les contrats échus ne sont pas toujours conservés par Yahoo : sur les fenêtres
+  anciennes, la série garde alors le générique (changement le jour d'échéance, signalé aussi).
+  WTI et TTF restent sur le générique.
+* Les symboles CNBC de la courbe US (`US2Y`, `US5Y`, `US10Y`, `US30Y`) sont à confirmer avec
+  *Tester la connexion* ; en cas d'échec, la chaîne retombe sur les sources précédentes.
+* Derrière un pare-feu strict, le contrôle croisé n'a souvent pas de seconde source : il reste
+  « indisponible » et seul le seuil de z-score protège la publication.
+* **Titres des indices (v1.6)**, non testés en réel depuis l'environnement de développement
+  (Yahoo, iShares, Wikipedia et FMP y sont bloqués) : URL des fichiers iShares (IVV, EXSA) et
+  tableaux Wikipedia (S&P 500, Nasdaq 100) à confirmer par `constituents refresh` ; listes de départ des indices européens
+  (fin 2025) à vérifier par `constituents check` et contre le site de l'indice.
+* Poids estimés par la capitalisation totale pour les indices sans ETF (CAC, DAX, FTSE MIB,
+  IBEX, Euro Stoxx 50) : contributions approchées, écart affiché quand il dépasse 15 %.
+* FMP gratuit : 250 appels par jour, couverture européenne incertaine ; le contrôle des titres
+  cités peut rester « non contrôlé » (signalé avant diffusion).
+
+**Évolutions possibles**
+
+* Volatilité EWMA ($\lambda = 0{,}94$) en option pour les z-scores.
+* Sources officielles gratuites pour les taux souverains (Bundesbank, Banque de France).
+* Envoi des alertes critiques par e-mail ou Teams depuis la tâche planifiée.
+* Historique des alertes déclenchées (persistance) et accusé de lecture dans l'UI.
+
+L'historique des versions est dans [CHANGELOG.md](CHANGELOG.md).

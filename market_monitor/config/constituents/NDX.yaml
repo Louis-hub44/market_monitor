@@ -1,0 +1,13 @@
+index: NDX
+name: Nasdaq 100
+group: core
+currency: USD
+as_of: null
+source: 'à charger : market-monitor constituents refresh --index NDX'
+weights: marketcap
+# liste Wikipedia (le plan FMP gratuit ne sert pas nasdaq-constituent), poids par la capitalisation
+refresh:
+  kind: wikipedia
+  wikipedia_url: https://en.wikipedia.org/wiki/Nasdaq-100
+  mic: XNAS
+members:

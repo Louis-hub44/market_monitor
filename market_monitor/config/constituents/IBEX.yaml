@@ -1,0 +1,46 @@
+index: IBEX
+name: IBEX 35
+group: core
+currency: EUR
+as_of: null
+source: 'liste de départ (fin 2025), à vérifier ; poids : market-monitor constituents refresh'
+weights: marketcap
+refresh:
+  kind: manual
+  check: https://www.bolsasymercados.es
+members:
+  - {ticker: ANA.MC, name: Acciona, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: ANA.MC}
+  - {ticker: ANE.MC, name: Acciona Energía, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: ANE.MC}
+  - {ticker: ACX.MC, name: Acerinox, sector: Matériaux, mic: XMAD, currency: EUR, fmp: ACX.MC}
+  - {ticker: ACS.MC, name: ACS, sector: Industrie, mic: XMAD, currency: EUR, fmp: ACS.MC}
+  - {ticker: AENA.MC, name: Aena, sector: Industrie, mic: XMAD, currency: EUR, fmp: AENA.MC}
+  - {ticker: AMS.MC, name: Amadeus, sector: Technologie, mic: XMAD, currency: EUR, fmp: AMS.MC}
+  - {ticker: MTS.MC, name: ArcelorMittal, sector: Matériaux, mic: XMAD, currency: EUR, fmp: MTS.MC}
+  - {ticker: SAB.MC, name: Banco Sabadell, sector: Finance, mic: XMAD, currency: EUR, fmp: SAB.MC}
+  - {ticker: SAN.MC, name: Banco Santander, sector: Finance, mic: XMAD, currency: EUR, fmp: SAN.MC}
+  - {ticker: BKT.MC, name: Bankinter, sector: Finance, mic: XMAD, currency: EUR, fmp: BKT.MC}
+  - {ticker: BBVA.MC, name: BBVA, sector: Finance, mic: XMAD, currency: EUR, fmp: BBVA.MC}
+  - {ticker: CABK.MC, name: CaixaBank, sector: Finance, mic: XMAD, currency: EUR, fmp: CABK.MC}
+  - {ticker: CLNX.MC, name: Cellnex, sector: Communication, mic: XMAD, currency: EUR, fmp: CLNX.MC}
+  - {ticker: ENG.MC, name: Enagás, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: ENG.MC}
+  - {ticker: ELE.MC, name: Endesa, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: ELE.MC}
+  - {ticker: FER.MC, name: Ferrovial, sector: Industrie, mic: XMAD, currency: EUR, fmp: FER.MC}
+  - {ticker: FDR.MC, name: Fluidra, sector: Industrie, mic: XMAD, currency: EUR, fmp: FDR.MC}
+  - {ticker: GRF.MC, name: Grifols, sector: Santé, mic: XMAD, currency: EUR, fmp: GRF.MC}
+  - {ticker: IAG.MC, name: IAG, sector: Industrie, mic: XMAD, currency: EUR, fmp: IAG.MC}
+  - {ticker: IBE.MC, name: Iberdrola, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: IBE.MC}
+  - {ticker: IDR.MC, name: Indra, sector: Technologie, mic: XMAD, currency: EUR, fmp: IDR.MC}
+  - {ticker: ITX.MC, name: Inditex, sector: Consommation discrétionnaire, mic: XMAD, currency: EUR, fmp: ITX.MC}
+  - {ticker: COL.MC, name: Inmobiliaria Colonial, sector: Immobilier, mic: XMAD, currency: EUR, fmp: COL.MC}
+  - {ticker: LOG.MC, name: Logista, sector: Industrie, mic: XMAD, currency: EUR, fmp: LOG.MC}
+  - {ticker: MAP.MC, name: Mapfre, sector: Finance, mic: XMAD, currency: EUR, fmp: MAP.MC}
+  - {ticker: MRL.MC, name: Merlin Properties, sector: Immobilier, mic: XMAD, currency: EUR, fmp: MRL.MC}
+  - {ticker: NTGY.MC, name: Naturgy, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: NTGY.MC}
+  - {ticker: PUIG.MC, name: Puig, sector: Consommation de base, mic: XMAD, currency: EUR, fmp: PUIG.MC}
+  - {ticker: RED.MC, name: Redeia, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: RED.MC}
+  - {ticker: REP.MC, name: Repsol, sector: Énergie, mic: XMAD, currency: EUR, fmp: REP.MC}
+  - {ticker: ROVI.MC, name: Rovi, sector: Santé, mic: XMAD, currency: EUR, fmp: ROVI.MC}
+  - {ticker: SCYR.MC, name: Sacyr, sector: Industrie, mic: XMAD, currency: EUR, fmp: SCYR.MC}
+  - {ticker: SLR.MC, name: Solaria, sector: Services aux collectivités, mic: XMAD, currency: EUR, fmp: SLR.MC}
+  - {ticker: TEF.MC, name: Telefónica, sector: Communication, mic: XMAD, currency: EUR, fmp: TEF.MC}
+  - {ticker: UNI.MC, name: Unicaja, sector: Finance, mic: XMAD, currency: EUR, fmp: UNI.MC}

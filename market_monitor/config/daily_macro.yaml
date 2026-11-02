@@ -1,0 +1,121 @@
+# Mise en page de l'export « daily macro » (Excel, PNG, texte).
+# Les bandeaux reprennent ceux de la revue : indices, taux 10 ans, marchés clés, spreads.
+#
+# Chaque ligne d'un bandeau est un identifiant (SPX) ou un dictionnaire d'options :
+#   {id: GOLD, label: Or, decimals: 0, suffix: " $", change: pct, change_decimals: 1}
+#     label            libellé affiché (défaut : nom du référentiel)
+#     decimals         décimales du niveau        suffix   texte collé au niveau (remplace « % » / « bps »)
+#     change           pct | bp | abs : unité de variation (ex. VIX en % au lieu de points)
+#     change_decimals  décimales de la variation
+# decimals / suffix / change / change_decimals peuvent aussi être posés au niveau du bandeau.
+
+title: Revue de marché
+
+format:
+  thousands_separator: false   # 6272,95 plutôt que 6 272,95
+  compact_units: true          # 5,27% / −5bps plutôt que 5,27 % / −5 bps
+  bp_unit: bps                 # « bp » au singulier quand |variation| <= 1
+
+sections:
+  - title: Indices
+    instruments: [SX5E, CAC, SPX, NDX, {id: NKY, decimals: 0}, CSI300]
+
+  - title: Taux 10 ans
+    decimals: 2
+    change_decimals: 0
+    instruments:
+      - {id: UST_10Y, label: États-Unis}
+      - {id: BUND_10Y, label: Allemagne}
+      - {id: OAT_10Y, label: France}
+      - {id: BTP_10Y, label: Italie}
+      - {id: GILT_10Y, label: Royaume-Uni}
+      - {id: JGB_10Y, label: Japon}
+
+  - title: Marchés clés
+    change_decimals: 1
+    instruments:
+      - {id: BRENT, suffix: " $"}
+      - EURUSD
+      - {id: VIX, change: pct}
+      - {id: MXEF, label: MSCI EM}
+      - {id: GOLD, decimals: 0, suffix: " $"}
+      - {id: BTC, decimals: 0, suffix: " $"}
+
+  # iTraxx, OAS Euro IG et rendement Euro IG : Bloomberg, sinon saisie manuelle (vue Daily
+  # macro / `market-monitor quote set`). OAS HY et US IG : FRED (ICE BofA) en gratuit.
+  - title: Spreads
+    decimals: 1
+    change_decimals: 1
+    instruments:
+      - {id: OAT_BUND_10Y, label: OAT-Bund 10 ans, decimals: 0, change_decimals: 0}
+      - {id: ITRX_MAIN, label: iTraxx Main}
+      - {id: ITRX_XOVER, label: iTraxx Crossover}
+      - {id: HY_IG_EUR, label: HY-IG Euro, decimals: 0, change_decimals: 0}
+      - {id: HY_IG_US, label: HY-IG US, decimals: 0, change_decimals: 0}
+      - {id: G_SPREAD_EUR_IG, label: G spread Euro IG, decimals: 0, change_decimals: 0}
+
+# Clôtures uniquement. Quand la revue est datée du jour, un cours du jour dont la séance
+# n'est pas encore close (cours en séance) est ignoré : la ligne et son graphique montrent
+# la dernière clôture. Heures de Paris après lesquelles la séance du jour est close ; le
+# plus précis l'emporte (instrument > groupe > classe > défaut). Mettre false pour désactiver.
+closing_prices:
+  default: "17:45"
+  classes: {rates: "18:00", credit: "18:00", fx: "23:05", commodities: "20:45",
+            volatility: "22:20", crypto: "23:59"}
+  groups: {États-Unis: "23:05", Japon: "08:35"}
+  instruments: {NKY: "08:35", CSI300: "09:05", MXEF: "23:30"}
+
+# Graphiques (vue Daily macro et PNG « graphiques » de l'export). Par graphique :
+#   title        titre affiché
+#   instruments  1 à 4 identifiants (un seul axe : même unité, ex. deux spreads en pb)
+#   period       1M | 3M | 6M | YTD | 1A | 3A | 5A (défaut YTD)
+#   start        date de début fixe AAAA-MM-JJ (remplace period)
+#   labels       libellés de légende, dans l'ordre des instruments
+# La période et les dates se changent aussi dans le dashboard, graphique par graphique.
+charts:
+  - {title: Euro Stoxx 50, instruments: [SX5E], period: YTD}
+  - {title: S&P 500, instruments: [SPX], period: YTD}
+  - {title: Bund et OAT 10 ans, instruments: [BUND_10Y, OAT_10Y], labels: [Bund, OAT], period: YTD}
+  # Courbes d'OAS (ICE BofA, comme sur FRED), en pb : Euro HY et US HY
+  - {title: OAS High Yield, instruments: [EUR_HY_OAS, US_HY_OAS], labels: [Euro HY, US HY], period: YTD}
+  # Variante : écart HY-IG
+  # - {title: Spread HY-IG, instruments: [HY_IG_EUR, HY_IG_US], labels: [Euro, US], period: YTD}
+  - {title: Brent, instruments: [BRENT], period: YTD}
+  - {title: VIX, instruments: [VIX], period: 3M}
+
+# Variations affichées, parmi chg_1d, chg_1w, chg_mtd, chg_ytd
+columns: [chg_1d]
+
+movers:
+  universe: home          # watchlist (ou sélecteur) dans laquelle chercher les mouvements
+  count: 8
+  min_abs_z: 1.5          # seuil de |z 1J| pour figurer dans les mouvements marquants
+  strong_z: 2.5           # au-delà : « forte hausse », « forte détente »...
+  show_zscore: true       # ajoute (z +2,8) dans le texte
+
+file_prefix: daily_macro  # daily_macro_2026-10-05.xlsx / .png / .txt
+
+# « Valeurs marquantes » (v1.6) : trois hausses et trois baisses par indice, une phrase par
+# indice dans le texte, une feuille dans l'Excel. Désactivé par défaut (export inchangé).
+# Il faut les cours des titres : market-monitor equities refresh (lancé par la tâche du matin).
+#   indices       codes des compositions (config/constituents) : CAC, SX5E, SPX, DAX…
+#   count         titres par sens (1 à 10)
+#   verify        contrôle FMP des titres cités avant diffusion (un appel par candidat :
+#                 2 × count × 2 par indice ; plan gratuit à 250 appels / jour)
+#   tolerance_pp  écart maximal entre les deux sources, en points de %
+stocks:
+  enabled: false
+  indices: [CAC, SX5E, SPX]
+  count: 3
+  verify: true
+  tolerance_pp: 1.0
+
+# PNG imprimable des courbes de taux (<file_prefix>_<date>_courbes.png). Désactivé par défaut.
+#   countries      DE, FR, IT, ES, US (+ GB, JP)
+#   comparisons    courbes de comparaison : J-1, S-1, M-1
+#   changes_since  base de l'histogramme des variations (pb)
+curves_chart:
+  enabled: false
+  countries: [DE, FR, IT, ES, US]
+  comparisons: [J-1, S-1, M-1]
+  changes_since: J-1
