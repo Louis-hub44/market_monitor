@@ -1,0 +1,44 @@
+# Taxonomie des facteurs de risque du moteur de stress.
+# Unités des chocs : bp (taux, spreads), rendement décimal (actions, change, matières premières : 0.10 = +10 %),
+# points (volatilité). Les sensibilités (« delta ») sont des P&L en devise de base pour 1 unité de choc.
+
+base_currency: EUR
+
+rates:
+  # Une courbe par pays : les piliers sont ceux dont l'historique quotidien gratuit existe
+  # (Stooq / Bundesbank / CNBC). Les KRD sont projetées sur ces piliers par des tentes linéaires,
+  # plates au-delà des piliers extrêmes (même forme que les chocs de courbe de Rates & Bond Analytics).
+  pillars: [2, 5, 10, 30]                # années
+  countries: [DE, FR, IT, ES]
+  short_rate: IR.EUR.ESTR                # facteur monétaire (fonds monétaires)
+  credit_benchmark: DE                   # courbe de référence des obligations d'entreprises (spread vs Bund)
+  # Pays sans courbe propre : courbe de substitution, signalée comme approximation.
+  country_proxies: {NL: DE, AT: DE, FI: DE, LU: DE, BE: FR, IE: FR, PT: ES, GR: IT, EU: DE, SUPRA: DE}
+  # Courbe de valorisation de chaque pays (noms des courbes souveraines de Rates & Bond Analytics).
+  curve_names: {DE: BUND, FR: OAT, IT: BTP, ES: BONOS}
+  # Si la courbe d'un pays déclaré manque dans l'état de marché, la valorisation (forme des KRD) se fait
+  # sur cette courbe, signalée ; le risque reste porté par les facteurs du pays (IR.ES.* pour un Bonos).
+  missing_curve_fallback: {ES: FR, IT: FR, FR: DE}
+
+credit:
+  currency: EUR
+  ratings: [AAA, AA, A, BBB, BB, B, CCC]
+  sectors: [FIN, NONFIN]
+  # Mots-clés (minuscules) qui classent un secteur libre en financière ; le reste est NONFIN.
+  financial_keywords: [bank, banque, financ, insurance, assurance, insur, real estate, immobili, reit, broker,
+                       asset management, capital markets, leasing, covered]
+  # Notations non reconnues : bucket par défaut, signalé.
+  default_rating: BBB
+
+equity:
+  indices: [SX5E, SPX, DAX, CAC, NKY, MXEF]
+  default_index_by_region: {EU: SX5E, EUR: SX5E, US: SPX, USD: SPX, JP: NKY, EM: MXEF}
+  default_beta: 1.0
+
+fx:
+  currencies: [USD, GBP, CHF, JPY]
+
+volatility:
+  indices: [VIX, V2X]
+
+commodities: [BRENT, GOLD]

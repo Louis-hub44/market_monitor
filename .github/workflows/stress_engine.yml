@@ -1,0 +1,28 @@
+name: stress_engine
+
+on:
+  push:
+    paths: ['stress_engine/**', 'rates_bond_analytics/**', 'core/**', '.github/workflows/stress_engine.yml']
+  pull_request:
+    paths: ['stress_engine/**', 'rates_bond_analytics/**', 'core/**', '.github/workflows/stress_engine.yml']
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: stress_engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ../core -e ../rates_bond_analytics -e ".[dev]"
+      - run: ruff check .
+      - run: mypy
+      - run: pytest

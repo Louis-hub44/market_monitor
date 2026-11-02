@@ -10,7 +10,17 @@ Mini terminal de marché maison, sans Bloomberg. Chaque projet est autonome : il
 | `market_monitor/` | Écran d'accueil multi-actifs, séance de la veille, daily macro (v1.6.6) |
 | `rates_bond_analytics/` | Courbes €STR / EURIBOR / souveraines, analytics obligataires YAS, swaps, scénarios de courbe (v1.1) |
 | `portfolio-intelligence/` | Plateforme d'analyse de portefeuilles Equity / Fixed Income / Diversifié (V7) |
-| `docs/stress_engine/` | Conception du moteur de stress tests et de scénarios (en cours) |
+| `stress_engine/` | Moteur de stress tests, scénarios et VaR : facteurs de risque, projection des positions (phase 2) |
+| `docs/stress_engine/` | Conception et plan du moteur de stress |
 
-Installation d'un projet : se placer dans son dossier et suivre son README
-(par exemple `cd rates_bond_analytics && pip install -e ".[dev]"`).
+Installation : `core` d'abord (session réseau partagée), puis le projet voulu, depuis son dossier :
+
+```bash
+pip install -e core
+cd rates_bond_analytics && pip install -e ".[dev]"
+cd ../stress_engine && pip install -e ../rates_bond_analytics -e ".[dev]"
+```
+
+Réseau d'entreprise : toutes les requêtes passent par `core/terminal_core/network.py`
+(proxy, magasin de certificats du poste, certificat d'entreprise ; jamais `verify=False`).
+Diagnostic : `check-network`.

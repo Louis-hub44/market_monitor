@@ -1,0 +1,14 @@
+# Contrats futures EUREX sur emprunts d'État (à vérifier sur eurex.com avant usage réel).
+# Fenêtres de maturité résiduelle des titres livrables, mesurées à la date de livraison (années).
+# Livraison : le 10 du mois d'échéance (mars, juin, septembre, décembre), jour ouvré TARGET suivant.
+notional_coupon: 0.06          # coupon notionnel de 6 % : définit le facteur de conversion
+contract_size: 100000          # nominal par contrat, EUR
+delivery_day: 10
+contracts:
+  FGBS: {name: Euro-Schatz, country: DE, min_years: 1.75, max_years: 2.25}
+  FGBM: {name: Euro-Bobl, country: DE, min_years: 4.5, max_years: 5.5}
+  FGBL: {name: Euro-Bund, country: DE, min_years: 8.5, max_years: 10.5}
+  FGBX: {name: Euro-Buxl, country: DE, min_years: 24.0, max_years: 35.0}
+  FOAT: {name: Euro-OAT, country: FR, min_years: 8.5, max_years: 10.5}
+  FBTP: {name: Long-Term Euro-BTP, country: IT, min_years: 8.5, max_years: 11.0}
+  FBTS: {name: Short-Term Euro-BTP, country: IT, min_years: 2.0, max_years: 3.25}

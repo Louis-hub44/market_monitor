@@ -332,3 +332,18 @@ Le moteur est un **paquet autonome** sur le modèle de RBA, et non un sous-dossi
 3. Retrait de Bloomberg de la V7 et de RBA.
 4. FRED, Yahoo et l'import de séries de fichiers ajoutés à la couche de données RBA.
 5. `stress_engine` : taxonomie des facteurs, mapping (obligations, futures via le CTD, fonds avec look-through ou proxy, MMF, actions, FX) et portefeuille de test.
+
+---
+
+## 9. Avancement
+
+| Phase | État | Livré |
+| --- | --- | --- |
+| 1 | ✅ | Inventaire, plan, décisions (§8.9) |
+| 2 | ✅ | Monorepo, `core/` (session HTTP unique, `check-network`, jamais `verify=False`), Bloomberg retiré de la V7 et de RBA, sources FRED / Yahoo / fichiers dans RBA, paquet `stress_engine` : taxonomie des facteurs, projection des obligations (Z-spread, DV01 par pilier, CS01, convexité), des futures EUREX (CTD / CF), des fonds (transparence, proxy, monétaires), des actions, du change et de la trésorerie ; portefeuille de test fictif ; 60 tests |
+
+Écarts par rapport au plan, phase 2 :
+- **Piliers de taux** : 2, 5, 10 et 30 ans par pays, plus l'€STR. Un titre à moins d'un an porte son risque de taux sur l'€STR.
+- **Courbe Bonos** : absente de l'instantané d'exemple. La forme de courbe OAT est utilisée, mais le risque reste porté par `IR.ES.*`, et la note le signale.
+- **Spread duration** : prise égale à la duration effective pour un Z-spread constant (définition identique).
+- **Diagnostic depuis ce conteneur cloud** : le proxy refuse toutes les sources de données (tunnel 403), ce que `check-network` qualifie de `blocked`. Les tests sont donc entièrement hors ligne. Les sources réelles restent à valider sur le poste, avec `check-network`.

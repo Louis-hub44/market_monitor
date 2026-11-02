@@ -1,0 +1,10 @@
+fund,weight,id,name,instrument,issuer_type,currency,coupon,maturity,price,market_value,country,rating,sector
+MMF-B,0.3,TEST-CP-B1,CD Banque Phi 0% 2026-12,BOND,CORP,EUR,0.0,2026-12-18,99.435,,FR,A+,Banks
+MMF-B,0.25,TEST-CP-B2,CP Industrie Chi 0% 2027-01,BOND,CORP,EUR,0.0,2027-01-29,99.152,,DE,A,Industrials
+MMF-B,0.25,TEST-CP-B3,CD Banque Psi 0% 2027-04,BOND,CORP,EUR,0.0,2027-04-16,98.663,,NL,AA-,Banks
+MMF-B,0.2,TEST-CASH-B,Dépôts à vue,CASH,,EUR,,,,100,,,
+CREDIT-LT,0.25,TEST-LT-1,Banque Omega senior 3.25% 2030,BOND,CORP,EUR,3.25,2030-10-10,100.055,,FR,A,Banks
+CREDIT-LT,0.25,TEST-LT-2,Industrie Alpha2 3.75% 2032,BOND,CORP,EUR,3.75,2032-06-01,100.079,,DE,BBB,Industrials
+CREDIT-LT,0.2,TEST-LT-3,Utilities Beta2 3.0% 2034,BOND,CORP,EUR,3.0,2034-02-20,94.37,,ES,BBB+,Utilities
+CREDIT-LT,0.2,TEST-LT-4,Télécom Gamma2 5.0% 2029,BOND,CORP,EUR,5.0,2029-05-15,100.132,,IT,BB+,Communication Services
+CREDIT-LT,0.1,TEST-LT-5,Banque Delta2 2.75% 2028,BOND,CORP,EUR,2.75,2028-03-01,100.147,,DE,AA,Banks

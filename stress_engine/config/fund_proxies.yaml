@@ -1,0 +1,21 @@
+# Fonds sans composition (look-through impossible) : profil de risque proxy, déclaré ici.
+# Ce sont des HYPOTHÈSES (ordres de grandeur d'indices de place) : toute position qui s'en sert est
+# marquée « proxy » dans le rapport de mapping. Une composition fournie l'emporte toujours.
+#   duration / spread_duration en années ; country = courbe des taux ; rating / sector = facteur crédit ;
+#   equity = {indice: bêta} ; currency = exposition de change (hors devise de base).
+proxies:
+  EUR_GOV_ALL:      {description: "Emprunts d'État zone euro, toutes maturités", duration: 7.5, country: DE}
+  EUR_IG_CORP:      {description: "Crédit IG EUR", duration: 4.5, spread_duration: 4.5, country: DE,
+                     rating: A, sector: NONFIN}
+  EUR_IG_FIN:       {description: "Crédit IG EUR financières", duration: 4.0, spread_duration: 4.0, country: DE,
+                     rating: A, sector: FIN}
+  EUR_HY:           {description: "High yield EUR", duration: 3.0, spread_duration: 3.0, country: DE,
+                     rating: BB, sector: NONFIN}
+  EQ_EUROPE:        {description: "Actions zone euro", equity: {SX5E: 1.0}}
+
+# Fonds monétaires sans composition : WAM / WAL par défaut (plafonds réglementaires d'un fonds monétaire
+# court terme : WAM <= 60 jours, WAL <= 120 jours). Les valeurs du fichier portefeuille l'emportent.
+money_market:
+  default_wam_days: 45
+  default_wal_days: 90
+  credit_factor: {rating: A, sector: FIN}   # papier bancaire court terme
