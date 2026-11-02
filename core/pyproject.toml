@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terminal-core"
+version = "0.1.0"
+description = "Socle partagé du terminal : session HTTP unique derrière un proxy d'entreprise"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "certifi>=2023.7",
+    "truststore>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.10", "types-requests"]
+
+[project.scripts]
+check-network = "terminal_core.check_network:main"
+
+[tool.setuptools.packages.find]
+include = ["terminal_core*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+files = ["terminal_core"]

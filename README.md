@@ -6,6 +6,7 @@ Mini terminal de marché maison, sans Bloomberg. Chaque projet est autonome : il
 
 | Dossier | Rôle |
 | --- | --- |
+| `core/` | Socle partagé : session HTTP unique derrière le proxy d'entreprise, `check-network` |
 | `market_monitor/` | Écran d'accueil multi-actifs, séance de la veille, daily macro (v1.6.6) |
 | `rates_bond_analytics/` | Courbes €STR / EURIBOR / souveraines, analytics obligataires YAS, swaps, scénarios de courbe (v1.1) |
 | `portfolio-intelligence/` | Plateforme d'analyse de portefeuilles Equity / Fixed Income / Diversifié (V7) |
