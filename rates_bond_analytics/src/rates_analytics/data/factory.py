@@ -25,6 +25,7 @@ from rates_analytics.data.cache import ParquetCache
 from rates_analytics.data.mapping import MarketDataMap
 from rates_analytics.data.provider import DataProvider
 from rates_analytics.data.providers.ecb import EcbProvider
+from rates_analytics.data.providers.files import FileProvider
 from rates_analytics.data.providers.fmp import FmpProvider
 from rates_analytics.data.providers.public import PublicProvider
 from rates_analytics.data.providers.static import StaticProvider
@@ -52,6 +53,11 @@ def build_provider(name: str, settings: Settings, mapping: MarketDataMap, sessio
         o = settings.provider_options("public")
         return PublicProvider(mapping, timeout_s=float(o.get("timeout_s", 20)), session=session,
                               quote_lookback_days=lookback)
+    if name == "file":
+        o = settings.provider_options("file")
+        root = Path(o.get("root", "."))
+        return FileProvider(mapping, root=root if root.is_absolute() else PROJECT_ROOT / root,
+                            quote_lookback_days=lookback)
     if name == "static":
         o = settings.provider_options("static")
         directory = Path(o.get("directory", "data/sample"))

@@ -2,7 +2,7 @@
 
 Module « courbes de taux & analytics obligataires » du mini terminal de marché maison, inspiré de **GC** (courbes), **SWPM** (pricer de swaps) et **YAS** (analytics obligataires). Les objets produits ici (conventions, échéanciers, puis courbes) sont réutilisés par le Pricing Lab, le CVA Calculator et Portfolio Intelligence.
 
-> **Statut : version 1.1.0, phases 1 à 10 terminées.** Le module couvre l'architecture, les conventions et la couche de données ; les courbes €STR et EURIBOR 6M en dual curve et les courbes souveraines NSS ; les analytics YAS et les spreads G / I / Z / ASW ; le pricer SWPM avec risque bucketé ; les scénarios de courbe ; le dashboard Streamlit ; une API d'intégration stable. Il compte 344 tests, est propre sous ruff et mypy, avec une CI sous Windows et Linux.
+> **Statut : version 1.1.0, phases 1 à 10 terminées.** Le module couvre l'architecture, les conventions et la couche de données ; les courbes €STR et EURIBOR 6M en dual curve et les courbes souveraines NSS ; les analytics YAS et les spreads G / I / Z / ASW ; le pricer SWPM avec risque bucketé ; les scénarios de courbe ; le dashboard Streamlit ; une API d'intégration stable. Il compte 356 tests, est propre sous ruff et mypy, avec une CI sous Windows et Linux.
 
 ---
 
@@ -85,7 +85,7 @@ copy .env.example .env                # puis renseigner FMP_API_KEY
 Dans PyCharm : marquer `src/` comme *Sources Root*, interpréteur = `.venv`, configuration pytest sur `tests/`.
 
 ```bash
-pytest                    # 344 tests (unitaires + oracle QuantLib + UI), sans réseau
+pytest                    # 356 tests (unitaires + oracle QuantLib + UI), sans réseau
 pytest --cov              # + couverture (93 %)
 ruff check . && mypy      # lint + typage
 pytest -m network         # appels réels (diagnostic réseau, ECB, CNBC/Bundesbank, FMP, instantané gratuit) depuis votre poste
@@ -688,6 +688,13 @@ Un pare-feu qui **bloque** un site (page de blocage, tunnel refusé) ne se règl
 
 Les sources sont chaînées (`cnbc:…|bbk:…|stooq:…`). Une source entièrement indisponible (page anti-robot, hôte filtré) est ignorée pour le reste de la requête, au lieu d'épuiser un délai par id.
 
+**Crédit, volatilité, indices et fichiers (monorepo, pour le moteur de stress).** Le provider `public` accepte aussi :
+- `fred:<SÉRIE>` : export CSV de FRED, sans clé (`BAA10Y`, `VIXCLS`, `BAMLHE00EHYIOAS`…). FRED ne diffuse que les **3 dernières années** des séries ICE BofA ;
+- `fredapi:<SÉRIE>` : API officielle de FRED, sur un autre hôte. Clé gratuite dans `FRED_API_KEY`, utile si le proxy filtre `fred.stlouisfed.org`. Chaîne type : `fred:X|fredapi:X` ;
+- `yahoo:<symbole>` : API chart de Yahoo, clôture ajustée (`^STOXX50E`, `IEAC.L`, `EURUSD=X`…), par la même session que le reste, sans yfinance.
+
+Le provider **`file`** sert les séries importées en CSV ou Excel : `file: {path, column, scale}` (option `sheet`). Il lit le format **large** (une colonne par série) comme le format **long** `date, instrument, niveau, …` de l'historique des bandeaux. Il gère la virgule décimale, le séparateur `;`, les dates ISO ou jour/mois/année, et les corrections du jour (la dernière ligne l'emporte). C'est la voie pour les historiques sans source gratuite : iTraxx, indices de crédit par notation, cotations de swap.
+
 ### 11.3 Courbes proxy quand il n'y a pas de cotations de swap
 
 Aucune source gratuite ne publie de cotations OIS €STR ou de swaps EURIBOR. Sans fichier de cotations, les courbes de swap ne peuvent donc pas être bootstrappées sur le marché. Au lieu d'échouer, `curves/proxy.py` **reconstruit les cotations manquantes**, puis le bootstrap normal tourne dessus. Tous les écrans (SWPM, spreads, scénarios) fonctionnent alors sans changement :
@@ -764,7 +771,7 @@ Le transport par JSON permet aussi de calculer les courbes une seule fois (par e
 
 | Outil | Commande | État |
 |---|---|---|
-| Tests | `pytest` | 344 tests, sans réseau, environ 1 min 45 |
+| Tests | `pytest` | 356 tests, sans réseau, environ 1 min 45 |
 | Couverture | `pytest --cov` | 93 % (moteur + services UI) |
 | Lint / imports | `ruff check .` | 0 alerte (règles E, F, W, I, UP, B, RUF, C4) |
 | Typage | `mypy` | 0 erreur sur `src/rates_analytics` |

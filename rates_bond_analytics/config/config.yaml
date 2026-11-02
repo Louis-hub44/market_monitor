@@ -18,8 +18,8 @@ network:
   timeout_s: 20
 
 data:
-  provider: free            # fmp | free (ECB Data Portal) | public (CNBC/Bundesbank/Stooq) | static
-  fallback: [public, fmp]   # ordered chain used for ids the primary cannot serve (FMP skipped without key)
+  provider: free            # fmp | free (ECB Data Portal) | public (CNBC/Bundesbank/Stooq/FRED/Yahoo) | file | static
+  fallback: [public, file, fmp]   # ordered chain used for ids the primary cannot serve (FMP skipped without key)
   missing_policy: warn      # raise | warn (NaN + log) | drop
   quote_lookback_days: 10   # calendar days searched backwards for the last valid quote
   plausible_rate_range: [-0.05, 0.30]   # decimal; values outside are flagged in the DataReport
@@ -38,7 +38,9 @@ providers:
     base_url: https://data-api.ecb.europa.eu/service/data
     timeout_s: 30
   public:
-    timeout_s: 20
+    timeout_s: 20             # FRED API key (optional, fredapi: prefix): FRED_API_KEY in .env
+  file:
+    root: .                   # CSV / Excel series (file: {path, column, scale}), relative to the project
   static:
     directory: data/sample
 

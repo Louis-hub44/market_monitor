@@ -112,7 +112,7 @@ def test_circuit_breaker_and_total_failure():
     with pytest.raises(DataProviderError, match="public sources failed"):
         _provider(down).get_history(["EUR.GOVT.DE.2Y"], date(2026, 9, 26), AS_OF)
     with pytest.raises(DataProviderError, match="unknown public source"):
-        prov.fetch_ticker("yahoo:^TNX", AS_OF, AS_OF)
+        prov.fetch_ticker("bogus:^TNX", AS_OF, AS_OF)
 
 
 # ------------------------------------------------------------------- proxy

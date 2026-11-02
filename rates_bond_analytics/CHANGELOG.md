@@ -3,7 +3,8 @@
 ## Non publié – monorepo du terminal
 - Réseau : toutes les requêtes passent par la session unique du terminal (`terminal_core.network`, dossier `core/`). Mode `auto` par défaut (magasin de certificats du poste via truststore, plus le certificat d'entreprise ; sinon ce certificat ; sinon certifi), proxy configurable (`network.proxy` / `no_proxy`, `TERMINAL_HTTPS_PROXY`). Le mode `insecure` (`verify=False`) est supprimé : refusé dans le code, ignoré avec un avertissement dans la configuration.
 - Bloomberg retiré : provider, client `blpapi`, tickers et option d'installation. Les cotations OIS / IRS / FRA viennent d'un fichier (provider `static`) ou des courbes proxy.
-- Tests : oracle QuantLib borné à `< 1.44`, car QuantLib 1.44 modifie `BondFunctions.convexity` ; garde-fou contre `verify=False` dans les sources ; 344 tests.
+- Données : préfixes `fred:`, `fredapi:` (clé `FRED_API_KEY`, masquée dans les erreurs) et `yahoo:` dans le provider `public`. Nouveau provider `file` : séries CSV / Excel, au format large ou long (historique des bandeaux), avec virgule décimale, `;` et dates jour/mois/année.
+- Tests : oracle QuantLib borné à `< 1.44`, car QuantLib 1.44 modifie `BondFunctions.convexity` ; garde-fou contre `verify=False` dans les sources ; 356 tests.
 
 ## 1.1.0 – corporate network, free data, UI
 - `rates_analytics.network`: corporate SSL-proxy support ported from Market Monitor, with four modes: `system` (Windows certificate store through `truststore`, the default), `ca`, `insecure` and `standard`. One configured session is shared by every REST provider, and connectivity diagnostics name the dominant cause of failure.

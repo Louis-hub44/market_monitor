@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
-VALID_PROVIDERS = ("fmp", "free", "public", "static")
+VALID_PROVIDERS = ("fmp", "free", "public", "file", "static")
 VALID_POLICIES = ("raise", "warn", "drop")
 
 
