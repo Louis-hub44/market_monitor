@@ -21,7 +21,7 @@ rates_bond_analytics/
 │   ├── swaps/                  # pricer SWPM (NPV, couru, par, PV01, DV01) et risque bucketé
 │   ├── scenarios/              # chocs de courbe (parallèle, twist, butterfly, custom, IRRBB) et P&L
 │   ├── api.py                  # API d'intégration stable pour les autres modules du terminal
-│   ├── network.py              # proxy SSL d'entreprise : modes standard / Windows / certificat / contournement
+│   ├── network.py              # proxy SSL d'entreprise : couche sur terminal_core (jamais verify=False)
 │   ├── config.py               # chargement config.yaml + .env
 │   └── exceptions.py
 ├── app/                        # UI Streamlit : connection.py (écran de connexion), services.py, charts.py, theme.py, streamlit_app.py
@@ -77,7 +77,8 @@ Principes :
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e .[dev]                 # moteur + pytest, QuantLib (oracle de test), ruff, mypy
+pip install -e ../core               # session réseau partagée du terminal (monorepo)
+pip install -e .[dev]                 # moteur + pytest, QuantLib < 1.44 (oracle de test), ruff, mypy
 copy .env.example .env                # puis renseigner FMP_API_KEY
 # Bloomberg (optionnel, terminal ouvert sur le poste) :
 pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
@@ -662,20 +663,22 @@ $$\text{P\&L}_{bond} = \frac{N}{100}\left[P^{scén}_{dirty}(z_0) - P^{base}_{dir
 
 ### 11.1 Proxy d'inspection SSL
 
-Au bureau, un proxy (Zscaler, Netskope…) réécrit le trafic HTTPS avec un certificat interne que Python ne connaît pas. Toutes les sources échouent alors en même temps (`certificate verify failed`), et l'application retombait sur les données d'exemple. Le module `rates_analytics/network.py` reprend la logique de Market Monitor et applique la même politique SSL à **une session HTTP partagée** par l'ECB, FMP et les sources publiques. Rien n'est modifié globalement dans le processus.
+Au bureau, un proxy (Zscaler, Netskope…) réécrit le trafic HTTPS avec un certificat interne que Python ne connaît pas. Toutes les sources échouent alors en même temps (`certificate verify failed`). Toutes les requêtes passent par **la session HTTP unique du terminal** (`core/terminal_core/network.py`, partagée avec Portfolio Intelligence et le moteur de stress). `rates_analytics/network.py` n'en est qu'une couche de compatibilité.
 
-| Mode | Vérification SSL | Usage |
+| Mode | Confiance | Usage |
 |---|---|---|
-| `system` (par défaut) | active, avec le **magasin de certificats Windows** (`truststore`) | l'informatique y installe le certificat du proxy : marche au bureau comme à la maison, sans configuration |
-| `ca` | active, avec le certificat racine fourni (`.pem` / `.crt`) | si le certificat n'est pas dans le magasin Windows |
-| `insecure` | **désactivée** (`verify=False`) | dépannage, sur le réseau de confiance de l'entreprise uniquement, jamais sur un Wi-Fi public |
-| `standard` | active, avec `certifi` | hors proxy |
+| `auto` (par défaut) | magasin de certificats du poste (`truststore`), complété du certificat d'entreprise s'il est fourni ; sinon le certificat d'entreprise ; sinon `certifi` | bureau comme maison, sans configuration |
+| `system` | magasin de certificats du poste (+ certificat d'entreprise éventuel) | forcer le magasin Windows |
+| `ca` | certificat racine fourni (`.pem` / `.crt`), fusionné avec `certifi` | si le certificat n'est pas dans le magasin Windows |
+| `standard` | `certifi` seul | hors proxy |
 
-**Écran de connexion.** Le dashboard s'ouvre sur une page qui demande la source et le mode réseau **avant** tout appel de données. Le bouton *Tester les sources* interroge ECB, FMP, CNBC, Bundesbank et Stooq en parallèle. Il qualifie chaque échec (certificat, proxy, filtrage, délai, DNS) et désigne la cause dominante : si tout échoue sur le certificat, c'est le proxy, pas les sources. Si le chargement échoue ensuite sur des certificats, un bandeau propose de passer en mode Windows ou de contourner le SSL. Le choix se change à tout moment depuis la barre latérale.
+**La vérification des certificats n'est jamais désactivée.** L'ancien mode `insecure` est refusé dans le code. S'il figure encore dans un `config.yaml` ou une variable d'environnement (`RATES_NETWORK_MODE=insecure`, `MARKET_MONITOR_INSECURE_SSL`), il est ignoré avec un avertissement. Un test vérifie qu'aucun `verify=False` ne subsiste dans les sources.
 
-**Scripts et API.** Le mode se règle dans le bloc `network:` de `config.yaml` ou par `.env` (`RATES_NETWORK_MODE`, `RATES_CA_BUNDLE`). `REQUESTS_CA_BUNDLE` et les variables de Market Monitor (`MARKET_MONITOR_CA_BUNDLE`, `MARKET_MONITOR_INSECURE_SSL`) sont aussi reconnues : un seul `.env` sert tout le terminal. Le paramètre `api.market_snapshot(..., network=NetworkSettings(mode="system"))` force un mode.
+**Écran de connexion.** Le dashboard s'ouvre sur une page qui demande la source et le mode réseau **avant** tout appel de données. Le bouton *Tester les sources* interroge ECB, FMP, CNBC, Bundesbank et Stooq en parallèle. Il qualifie chaque échec (certificat, proxy, authentification proxy, filtrage, délai, DNS, source en erreur) et désigne la cause dominante. Si le chargement échoue ensuite sur des certificats, un bandeau propose le magasin Windows ou le certificat d'entreprise.
 
-Un pare-feu qui **bloque** un site (page de blocage, délai) ne se contourne pas par le SSL. Le diagnostic le signale, et la demande d'ouverture va à l'informatique.
+**Scripts et API.** Le mode et le proxy se règlent dans le bloc `network:` de `config.yaml` (`mode`, `ca_bundle`, `proxy`, `no_proxy`). Ils sont surchargés par `.env` (`TERMINAL_TRUST`, `TERMINAL_CA_BUNDLE`, `TERMINAL_HTTPS_PROXY`, `TERMINAL_NO_PROXY` ; les anciennes variables `RATES_*` et `MARKET_MONITOR_CA_BUNDLE` restent lues). `api.market_snapshot(..., network=NetworkSettings(mode="system"))` force un mode. Diagnostic complet en ligne de commande : `check-network`.
+
+Un pare-feu qui **bloque** un site (page de blocage, tunnel refusé) ne se règle pas côté poste. Le diagnostic le signale, et la demande d'ouverture va à l'informatique.
 
 ### 11.2 Sources gratuites ajoutées
 

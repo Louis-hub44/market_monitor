@@ -1,8 +1,8 @@
 """Start screen: choose the data source and the SSL policy **before** any data request.
 
 Behind a corporate SSL-inspection proxy every online source fails at once; this gate lets
-the user pick "Windows store", "corporate certificate" or "bypass SSL" first, test the
-sources, then launch the loading. The choice lives in ``st.session_state`` and can be
+the user pick the trust source (automatic, Windows store or corporate certificate) first,
+test the sources, then launch the loading. Certificate verification is never disabled. The choice lives in ``st.session_state`` and can be
 changed from the sidebar or from the certificate-error banner.
 """
 
@@ -44,22 +44,22 @@ PROVIDER_HELP = {
     "static": "Instantané illustratif hors ligne (data/sample). Aucun appel réseau.",
 }
 MODES = {
+    "auto": "Automatique",
     "system": "Magasin Windows",
     "ca": "Certificat d'entreprise",
-    "insecure": "Contourner le SSL",
     "standard": "Standard",
 }
 MODE_HELP = {
+    "auto": "Magasin de certificats du poste (truststore), complété du certificat d'entreprise s'il est "
+            "configuré ; sinon certificats publics. Recommandé, au bureau comme à la maison.",
     "system": "Vérification SSL active avec le magasin de certificats de Windows, où l'informatique installe "
               "le certificat du proxy. À essayer en premier au bureau : aucune configuration.",
     "ca": "Vérification SSL active avec le certificat racine du proxy (fichier .pem / .crt fourni par "
           "l'informatique).",
-    "insecure": "Vérification SSL désactivée pour les sources de données. Uniquement sur le réseau de confiance "
-                "de l'entreprise, jamais sur un Wi-Fi public : le trafic pourrait être lu ou modifié.",
     "standard": "Vérification SSL normale (certifi). À la maison ou hors proxy d'entreprise.",
 }
-KIND_LABELS = {"ok": "OK", "ssl": "Certificat", "proxy": "Proxy", "timeout": "Délai", "blocked": "Filtré",
-               "dns": "DNS", "error": "Erreur"}
+KIND_LABELS = {"ok": "OK", "ssl": "Certificat", "proxy": "Proxy", "proxy_auth": "Proxy (407)",
+               "timeout": "Délai", "blocked": "Filtré", "dns": "DNS", "http": "Source en erreur", "error": "Erreur"}
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def network_from(mode: str, ca_path: str) -> NetworkSettings:
     if mode == "ca":
         path = ca_path.strip().strip('"')
         return NetworkSettings(mode="ca", ca_bundle=Path(path)) if path else NetworkSettings()
-    return NetworkSettings(mode=mode)
+    return NetworkSettings(mode=mode if mode in MODES else "auto")
 
 
 # ======================================================================= gate
@@ -119,15 +119,12 @@ def render_gate(settings: Settings) -> Connection | None:
         network = NetworkSettings()
         if provider != "static":
             st.markdown('<div class="rba-card-title">2 · Connexion réseau</div>', unsafe_allow_html=True)
-            default_mode = settings.network.mode if settings.network.mode in MODES else "system"
+            default_mode = settings.network.mode if settings.network.mode in MODES else "auto"
             mode = st.segmented_control("Mode", list(MODES), default=default_mode, required=True,
                                         format_func=lambda m: MODES[m], label_visibility="collapsed",
                                         key="rba-net-mode") or default_mode
             st.caption(MODE_HELP[mode])
             ca_path = _ca_input(settings) if mode == "ca" else ""
-            if mode == "insecure":
-                st.warning("La vérification des certificats sera désactivée pour cette session.",
-                           icon=":material/lock_open:")
             try:
                 network = network_from(mode, ca_path)
             except ConfigurationError as exc:
@@ -197,7 +194,7 @@ def diagnostic_html(results: Mapping[str, Mapping[str, Any]]) -> str:
 # ==================================================================== sidebar
 def render_sidebar_status(connection: Connection) -> None:
     st.markdown('<div class="rba-side-title">Connexion</div>', unsafe_allow_html=True)
-    kind = "warn" if connection.network.mode == "insecure" else "ok"
+    kind = "ok"
     label = "Hors ligne" if connection.offline else connection.network.label
     st.markdown(theme.chip(PROVIDERS.get(connection.provider, connection.provider), "") + " "
                 + theme.chip(label, "" if connection.offline else kind), unsafe_allow_html=True)
@@ -211,10 +208,6 @@ def render_ssl_rescue(errors: Mapping[str, str], connection: Connection) -> None
     n_ssl = count_ssl_failures(errors)
     if not n_ssl or n_ssl * 2 < len(errors):
         return
-    if connection.network.mode == "insecure":
-        st.error(f"{n_ssl} série(s) en échec de certificat malgré le contournement SSL : vérifiez HTTPS_PROXY "
-                 "ou le pare-feu.")
-        return
     with st.container(border=True):
         text, b1, b2 = st.columns([3, 1, 1], vertical_alignment="center")
         text.markdown(f"**Proxy d'inspection SSL détecté** — {n_ssl} série(s) refusée(s) sur le certificat.")
@@ -222,7 +215,7 @@ def render_ssl_rescue(errors: Mapping[str, str], connection: Connection) -> None
                                                              width="stretch", key="rba-rescue-system"):
             launch(Connection(connection.provider, NetworkSettings(mode="system")))
             st.rerun()
-        if b2.button("Contourner le SSL", type="primary", icon=":material/lock_open:", width="stretch",
-                     key="rba-rescue-insecure"):
-            launch(Connection(connection.provider, NetworkSettings(mode="insecure")))
+        if b2.button("Certificat d'entreprise", type="primary", icon=":material/badge:", width="stretch",
+                     key="rba-rescue-ca"):
+            back_to_gate()
             st.rerun()

@@ -1,17 +1,20 @@
 # Rates & Bond Analytics – configuration
 # Secrets go in .env (copy .env.example). ${VAR} / ${VAR:-default} are read from the environment.
 
-# Corporate network (SSL-inspection proxy such as Zscaler / Netskope). Chosen on the dashboard
-# start screen; this block is the default and the setting used by scripts / the API.
-#   standard : normal SSL verification (home / public network)
-#   system   : verification ON with the Windows certificate store (where IT installs the proxy CA) - safest
-#   ca       : verification ON with an explicit corporate root certificate (ca_bundle: path to .pem / .crt)
-#   insecure : verification OFF - trusted corporate network only, never on public Wi-Fi
-# Environment overrides (.env): RATES_NETWORK_MODE, RATES_CA_BUNDLE (also MARKET_MONITOR_CA_BUNDLE /
-# MARKET_MONITOR_INSECURE_SSL, REQUESTS_CA_BUNDLE) ; proxy: HTTPS_PROXY.
+# Corporate network (SSL-inspection proxy such as Zscaler / Netskope). All requests go through the
+# terminal's single session (core/terminal_core/network.py); certificate verification is ALWAYS on.
+#   auto     : OS certificate store (truststore) + ca_bundle if given, else ca_bundle, else certifi (default)
+#   system   : OS certificate store (where IT installs the proxy CA), + ca_bundle if given
+#   ca       : explicit corporate root certificate (ca_bundle: path to .pem / .crt), merged with certifi
+#   standard : public certificates only (certifi), home / public network
+# Environment overrides (.env): TERMINAL_TRUST, TERMINAL_CA_BUNDLE, TERMINAL_HTTPS_PROXY, TERMINAL_NO_PROXY
+# (legacy RATES_NETWORK_MODE / RATES_CA_BUNDLE / MARKET_MONITOR_CA_BUNDLE / REQUESTS_CA_BUNDLE still read);
+# proxy otherwise from the standard HTTPS_PROXY / NO_PROXY. Diagnostic: check-network.
 network:
-  mode: system
+  mode: auto
   ca_bundle: ""
+  proxy: ""              # e.g. http://proxy.company.com:8080 (empty = HTTPS_PROXY)
+  no_proxy: ""
   timeout_s: 20
 
 data:

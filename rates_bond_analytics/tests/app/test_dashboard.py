@@ -88,6 +88,6 @@ def test_connection_helpers():
     html = diagnostic_html({"ECB": {"ok": True, "kind": "ok", "status": 200, "latency_ms": 42, "message": "m"},
                             "CNBC": {"ok": False, "kind": "ssl", "status": None, "latency_ms": 9, "message": "<x>"}})
     assert 'rba-probe ok' in html and "42 ms" in html and "Certificat" in html and "&lt;x&gt;" in html
-    assert network_from("insecure", "").mode == "insecure" and network_from("ca", "").mode == "standard"
+    assert network_from("insecure", "").mode == "auto" and network_from("ca", "").mode == "auto"
     assert network_from("ca", "C:/corp.pem").ca_bundle.name == "corp.pem"
     assert 'class="rba-chip warn"' in chip("PROXY", "warn") and kpi_tiles([("a", "1", "<b>")]).count("rba-kpi") == 2

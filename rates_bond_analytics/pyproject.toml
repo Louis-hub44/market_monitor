@@ -20,6 +20,7 @@ dependencies = [
     "requests>=2.31",
     "pyarrow>=14.0",
     "truststore>=0.9",
+    "terminal-core>=0.1",   # monorepo: pip install -e ../core
 ]
 
 [project.optional-dependencies]

@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import requests
+from terminal_core import get_session
 
 from rates_analytics.exceptions import DataProviderError
 
@@ -22,7 +23,7 @@ class HttpClient:
         self._secrets = tuple(x for x in secrets if x)
         self.retries = retries
         self.backoff = backoff_s
-        self.session = session or requests.Session()
+        self.session = session or get_session()   # the terminal's single proxy-aware session
 
     def _mask(self, text: str) -> str:
         """Remove secrets (API keys) from messages before they reach logs or the UI."""
