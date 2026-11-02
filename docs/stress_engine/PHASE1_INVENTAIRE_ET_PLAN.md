@@ -319,3 +319,16 @@ Le moteur est un **paquet autonome** sur le modèle de RBA, et non un sous-dossi
    - chaque projet garde son `pyproject.toml`, ses tests et sa CI.
 2. **Périmètre du retrait de Bloomberg et de `verify=False`** : V7 et RBA d'office. Market Monitor 1.6.6 aussi, ou plus tard dans une tâche distincte ?
 3. **Portefeuille de test fictif** (§8.4) : accord sur la composition.
+
+### 8.9 Décisions prises (02/11/2026) — phase 1 close
+
+1. **Monorepo du terminal** : `core/`, `rates_bond_analytics/`, `stress_engine/`, `portfolio-intelligence/`, et `market_monitor/` en version 1.6.6. Chaque projet garde son `pyproject.toml`, ses tests et sa CI.
+2. **Retrait de Bloomberg et de `verify=False`** dans la V7 et RBA en phase 2. Market Monitor 1.6.6 sera traité plus tard, dans une tâche distincte.
+3. **Portefeuille de test fictif** : composition du §8.4 acceptée.
+
+**Phase 2, découpage en commits**, chacun avec ses tests verts :
+1. Import des quatre projets dans le monorepo, sans modification ; les suites existantes restent vertes.
+2. `core/network.py` + `scripts/check_network.py`. RBA et la V7 passent dessus ; le mode `insecure` est supprimé.
+3. Retrait de Bloomberg de la V7 et de RBA.
+4. FRED, Yahoo et l'import de séries de fichiers ajoutés à la couche de données RBA.
+5. `stress_engine` : taxonomie des facteurs, mapping (obligations, futures via le CTD, fonds avec look-through ou proxy, MMF, actions, FX) et portefeuille de test.
