@@ -137,11 +137,11 @@ d'entreprise, et la plus trompeuse : elle ressemble à une panne de fournisseur
 alors qu'elle vient du poste. Le module la traite comme un cas de première
 classe.
 
-- **Politique SSL centralisée** : une seule fonction (`configure_session`)
-  applique le réglage à tous les providers REST. Le certificat CA l'emporte
-  systématiquement sur le contournement — on ne désactive jamais une
-  vérification qu'on sait pouvoir faire réussir. Un chemin de certificat
-  invalide est ignoré **sans** dégrader en mode non vérifié.
+- **Session unique du terminal** : tous les providers (et yfinance) utilisent la
+  session de `terminal_core.network` : proxy configurable, magasin de certificats
+  du poste (`truststore`) complété du certificat d'entreprise, sinon ce certificat,
+  sinon certifi. **`verify=False` est impossible** (la session le refuse). Un
+  chemin de certificat invalide est ignoré sans dégrader la vérification.
 - **Qualification de la panne** : `BaseProvider` distingue un échec de
   certificat d'une indisponibilité normale et positionne `ssl_blocked`. Quand
   toutes les sources sont bloquées pour ce motif, l'interface accuse le proxy,
@@ -150,13 +150,11 @@ classe.
   (`ok`, `ssl`, `proxy`, `timeout`, `dns`, `blocked`). Une source qui répond et
   une autre qui échoue ⇒ problème de fournisseur ; les deux en échec SSL ⇒
   problème de poste.
-- **Cas yfinance** : il s'appuie sur `curl_cffi` (impersonation de navigateur)
-  contre les protections anti-bot de Yahoo. On ne lui substitue une session
-  `requests` — via le singleton `YfData`, car `session=` sur `yf.Ticker` ne
-  couvre pas tous les appels — que si une politique SSL est demandée.
+- **Cas yfinance** : la session du terminal lui est imposée via le singleton
+  `YfData` (`session=` sur `yf.Ticker` ne couvre pas tous les appels), à la place
+  de son client `curl_cffi` natif.
 
-Le contournement `PI_INSECURE_SSL` reste un **dépannage documenté**, pas une
-configuration cible : à proscrire sur un poste de passation d'ordres.
+L'ancien contournement `PI_INSECURE_SSL` est **ignoré** (avertissement journalisé).
 
 ### 4.5 Repli Yahoo sur les fonctions FMP
 
@@ -187,10 +185,10 @@ reconfigurent les sessions des providers sur place.
 
 Deux points de conception :
 
-- **L'interrupteur SSL est réversible.** `configure_session()` remet
-  explicitement `verify = True` dans la branche par défaut. Sans cela le bouton
-  serait à sens unique — une session dégradée le resterait jusqu'au redémarrage.
-  Bug réel, corrigé, couvert par `test_ssl_toggle_is_reversible`.
+- **Le changement de certificat est réversible.** `set_network(ca)` rebranche
+  tous les providers sur la session partagée correspondante ; `set_network(None)`
+  revient au magasin du poste. Couvert par
+  `test_certificate_change_is_applied_to_all_providers_and_reversible`.
 - **La clé n'est jamais écrite dans le cache.** Elle est ajoutée aux paramètres
   de requête *après* le calcul de l'empreinte de cache. `verify_key()` purge le
   cache lors d'une bascule, car deux clés peuvent ouvrir des droits différents.
@@ -302,7 +300,7 @@ existent, et ils sont nommés « hypothèses », pas « données ».
 | Pages | `AppTest` sur les 7 vues **en mode dégradé** (sans réseau ni clé) |
 | Bloomberg | résolution de tickers, normalisation des réponses, calendrier macro, enrichissement des positions, dégradation sans Terminal (23 tests, transport exclu) |
 | Import de fichiers réels | nominal vs valorisation, unités de taux par colonne, spreads normalisés, dérivés isolés, coupons < 1 % préservés |
-| Réseau et configuration | détection SSL, priorité CA > contournement, certificat invalide non dégradant, réversibilité de l'interrupteur, masquage de clé |
+| Réseau et configuration | détection SSL, session unique du terminal, `verify=False` impossible (et absent des sources), certificat invalide non dégradant, réversibilité du changement de certificat, masquage de clé |
 | Thème | palettes complètes, couleurs de catégories distinctes, signe jamais réutilisé, 12 graphiques construits dans les deux modes |
 | Replis Yahoo | bascule courbe / résultats / calendrier, qualité dégradée en ESTIMATED, absence de repli macro explicite |
 | Point d'entrée | `AppTest` sur `app.py` + validation des icônes Streamlit (attrape les erreurs d'API que `HTTP 200` ne révèle pas) |

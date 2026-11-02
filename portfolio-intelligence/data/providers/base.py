@@ -20,7 +20,7 @@ import requests
 
 from config.settings import get_settings
 from data.cache import DiskCache
-from data.network import configure_session, looks_like_ssl_error
+from data.network import looks_like_ssl_error, session_for
 
 log = logging.getLogger(__name__)
 
@@ -57,15 +57,9 @@ class BaseProvider(ABC):
         self.settings = get_settings()
         self.cache = DiskCache(namespace=self.name.lower())
         self.limiter = RateLimiter(rate_limit_per_min)
-        # La session porte la politique SSL du poste : derrière un proxy
-        # d'inspection d'entreprise, c'est ici que le certificat interne est
-        # reconnu (cf. data/network.py).
-        self._session = configure_session(
-            requests.Session(),
-            insecure_ssl=self.settings.insecure_ssl,
-            ca_bundle=self.settings.ca_bundle,
-        )
-        self._session.headers.update({"User-Agent": "portfolio-intelligence/0.1"})
+        # Session unique du terminal (proxy, magasin de certificats, certificat
+        # d'entreprise ; jamais verify=False), cf. data/network.py.
+        self._session = session_for(self.settings.ca_bundle)
         self.last_error: str | None = None
         self.ssl_blocked: bool = False
 
@@ -131,14 +125,13 @@ class BaseProvider(ABC):
                 return stale.value, True
             raise
 
-    def set_ssl_policy(self, insecure_ssl: bool, ca_bundle: str | None) -> None:
-        """Réapplique la politique SSL sans redémarrer l'application.
+    def set_ssl_policy(self, ca_bundle: str | None) -> None:
+        """Change le certificat d'entreprise sans redémarrer l'application.
 
-        La session est reconfigurée sur place et l'état d'erreur remis à zéro :
-        un réglage corrigé doit permettre de retenter immédiatement.
+        La session partagée correspondante est reprise et l'état d'erreur remis
+        à zéro : un réglage corrigé doit permettre de retenter immédiatement.
         """
-        configure_session(self._session, insecure_ssl=insecure_ssl, ca_bundle=ca_bundle)
-        self._session.headers.update({"User-Agent": "portfolio-intelligence/0.1"})
+        self._session = session_for(ca_bundle)
         self.last_error = None
         self.ssl_blocked = False
 

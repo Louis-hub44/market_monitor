@@ -531,7 +531,7 @@ class BloombergProvider(BaseProvider):
                 results[label] = f"erreur — {exc}"
         return results
 
-    def set_ssl_policy(self, insecure_ssl: bool, ca_bundle: str | None) -> None:
+    def set_ssl_policy(self, ca_bundle: str | None) -> None:
         """Sans objet ici : la Desktop API est une socket locale, pas du HTTPS.
 
         Aucun proxy d'inspection d'entreprise ne s'interpose sur localhost:8194 —

@@ -248,5 +248,5 @@ def test_bloomberg_is_first_in_the_provider_chain():
 def test_ssl_policy_is_a_no_op_for_a_local_socket():
     """La DAPI écoute sur localhost : aucun proxy d'inspection ne s'y interpose."""
     provider = BloombergProvider()
-    provider.set_ssl_policy(True, None)
+    provider.set_ssl_policy(None)
     assert provider._session.verify is not False     # session HTTP inchangée

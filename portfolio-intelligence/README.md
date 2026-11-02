@@ -250,32 +250,33 @@ cache et affiche la qualité CACHED — mais plus rien n'est frais.
 
 - **liste déroulante** des magasins de certificats détectés sur le poste
   (Zscaler, Netskope, chemins système), ou saisie d'un chemin manuel ;
-- **interrupteur** de désactivation de la vérification, pour le dépannage ;
 - bouton **Diagnostiquer la connexion** qui sonde chaque fournisseur séparément.
 
 Tout s'applique **à chaud**, sur tous les providers, sans redémarrage. Cochez
 « Mémoriser ce réglage réseau » pour le conserver d'une session à l'autre.
 
 Diagnostic détaillé : page **Qualité des données → Réseau**, avec la cause
-qualifiée par source (`ssl`, `proxy`, `timeout`, `dns`, `blocked`).
+qualifiée par source (`ssl`, `proxy`, `proxy_auth`, `timeout`, `dns`, `blocked`,
+`http`). Diagnostic de tout le terminal en ligne de commande : `check-network`.
 
 Équivalents en variables d'environnement, si vous préférez figer le réglage :
 
 ```bash
-PI_CA_BUNDLE=/chemin/vers/entreprise.pem   # recommandé : vérification maintenue
-PI_INSECURE_SSL=1                          # dépannage : vérification désactivée
+PI_CA_BUNDLE=/chemin/vers/entreprise.pem          # ou TERMINAL_CA_BUNDLE
+TERMINAL_HTTPS_PROXY=http://proxy.entreprise.local:8080
 ```
 
-Le certificat **l'emporte toujours** sur le contournement. `REQUESTS_CA_BUNDLE`
-et `SSL_CERT_FILE` sont aussi reconnues. Le contournement est réservé à un
-réseau d'entreprise de confiance : à ne pas laisser actif sur un poste qui
-manipule des ordres, et jamais sur un réseau public.
+Toutes les requêtes passent par **la session HTTP unique du terminal**
+(`core/terminal_core/network.py`). Par défaut, elle fait confiance au magasin de
+certificats du poste (paquet `truststore`), où l'informatique installe la racine
+du proxy ; le certificat d'entreprise éventuel y est ajouté. `REQUESTS_CA_BUNDLE`
+et `SSL_CERT_FILE` sont aussi reconnues. **La vérification SSL n'est jamais
+désactivée** : l'ancien `PI_INSECURE_SSL` est ignoré avec un avertissement.
 
 Le réglage s'applique à **tous** les fournisseurs — le proxy est un problème de
-poste, pas de source. Cas particulier de `yfinance` : il utilise `curl_cffi`
-avec impersonation de navigateur pour passer les protections anti-bot de Yahoo ;
-on ne lui impose une session `requests` que si une politique SSL spécifique est
-demandée, sinon on lui laisse son comportement natif.
+poste, pas de source. `yfinance` reçoit lui aussi la session du terminal (singleton
+`YfData`) au lieu de son client `curl_cffi` natif : aucune requête n'échappe à la
+politique réseau.
 
 ---
 

@@ -1,4 +1,5 @@
 # --- socle applicatif -------------------------------------------------
+-e ../core              # session réseau unique du terminal (truststore, proxy)
 streamlit>=1.59,<2.0
 pandas>=2.2
 numpy>=1.26

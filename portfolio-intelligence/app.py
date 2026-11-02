@@ -120,8 +120,8 @@ def sidebar() -> None:
         if any(p.get("ssl_blocked") for p in health):
             st.error(
                 "Certificat SSL non validé sur toutes les sources : un proxy "
-                "d'entreprise intercepte le trafic. Désactivez la vérification "
-                "ci-dessous ou renseignez le certificat."
+                "d'entreprise intercepte le trafic. Renseignez le certificat de "
+                "l'entreprise ci-dessous (ou installez le paquet truststore)."
             )
 
         connection_panel(md)
@@ -169,7 +169,7 @@ def connection_panel(md) -> None:
         st.markdown("**Vérification SSL**")
         st.caption(md.network_summary())
 
-        ca_choices = ["Aucun (vérification standard)"] + discover_ca_bundles()
+        ca_choices = ["Aucun (magasin de certificats du poste)"] + discover_ca_bundles()
         current_ca = md.ca_bundle or ""
         if current_ca and current_ca not in ca_choices:
             ca_choices.insert(1, current_ca)
@@ -182,22 +182,15 @@ def connection_panel(md) -> None:
         )
         custom_ca = st.text_input("…ou chemin manuel", value="", placeholder="/chemin/entreprise.pem")
 
-        insecure = st.toggle(
-            "Désactiver la vérification SSL", value=md.insecure_ssl,
-            help="Dépannage sur réseau d'entreprise de confiance uniquement. "
-                 "Un certificat renseigné l'emporte sur ce réglage.",
-        )
         persist_net = st.checkbox("Mémoriser ce réglage réseau", value=False, key="net_persist")
 
         if st.button("Appliquer les réglages réseau", type="primary", width="stretch"):
             ca = custom_ca.strip() or (selected_ca if not selected_ca.startswith("Aucun") else "")
-            md.set_network(insecure, ca, persist=persist_net)
+            md.set_network(ca, persist=persist_net)
             if ca:
                 st.success(f"Certificat appliqué : {Path(ca).name}")
-            elif insecure:
-                st.warning("Vérification SSL désactivée — réseau de confiance uniquement.")
             else:
-                st.success("Vérification SSL standard rétablie.")
+                st.success("Magasin de certificats du poste rétabli.")
 
         if st.button("Diagnostiquer la connexion", width="stretch"):
             with st.spinner("Sondage des fournisseurs…"):

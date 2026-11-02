@@ -25,11 +25,11 @@ def _flag(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _network_defaults() -> tuple[bool, str]:
-    """Réglages proxy/SSL lus depuis l'environnement (voir `data/network.py`)."""
-    from data.network import env_defaults
+def _env_ca_bundle() -> str:
+    """Certificat d'entreprise lu dans l'environnement (voir `data/network.py`)."""
+    from data.network import env_ca_bundle
 
-    return env_defaults()
+    return env_ca_bundle()
 
 
 def _int(name: str, default: int) -> int:
@@ -62,10 +62,9 @@ class Settings:
     max_workers: int = field(default_factory=lambda: _int("MAX_WORKERS", 8))
 
     # --- réseau d'entreprise (proxy d'inspection SSL) --------------- #
-    # Priorité au certificat CA : la vérification reste active. Le
-    # contournement est un dépannage, pas une configuration cible.
-    insecure_ssl: bool = field(default_factory=lambda: _network_defaults()[0])
-    ca_bundle: str = field(default_factory=lambda: _network_defaults()[1])
+    # Session unique du terminal (terminal_core) : la vérification SSL reste
+    # toujours active ; le certificat de l'entreprise complète le magasin du poste.
+    ca_bundle: str = field(default_factory=_env_ca_bundle)
 
     # --- cache ------------------------------------------------------ #
     cache_dir: Path = field(default_factory=lambda: Path(os.getenv("CACHE_DIR", ROOT / ".cache")))
@@ -86,7 +85,7 @@ class Settings:
 
     @property
     def network_customised(self) -> bool:
-        return bool(self.insecure_ssl or self.ca_bundle)
+        return bool(self.ca_bundle)
 
     def masked(self) -> dict[str, str]:
         """Vue de la configuration affichable dans l'UI (clé masquée)."""
@@ -99,7 +98,6 @@ class Settings:
                           if self.enable_bloomberg else "désactivé"),
             "OFFLINE_MODE": str(self.offline_mode),
             "PI_CA_BUNDLE": self.ca_bundle or "aucun",
-            "PI_INSECURE_SSL": str(self.insecure_ssl),
             "BASE_CURRENCY": self.base_currency,
             "CACHE_DIR": str(self.cache_dir),
         }

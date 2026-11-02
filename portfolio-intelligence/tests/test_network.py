@@ -3,21 +3,44 @@
 from __future__ import annotations
 
 import os
+import re
+from pathlib import Path
 
+import certifi
 import pytest
 import requests
+from terminal_core import network as core
+from terminal_core.guards import insecure_tls_uses
 
 from data.network import (
-    build_session,
     check_endpoint,
-    configure_session,
     count_ssl_failures,
     describe,
     discover_ca_bundles,
-    env_defaults,
+    env_ca_bundle,
     looks_like_ssl_error,
     proxy_env,
+    session_for,
 )
+
+NETWORK_VARS = ("PI_INSECURE_SSL", "PI_CA_BUNDLE", "TERMINAL_CA_BUNDLE", "RATES_CA_BUNDLE",
+                "MARKET_MONITOR_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "TERMINAL_TRUST")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_sessions():
+    yield
+    core.reset_sessions()
+
+
+@pytest.fixture
+def bundle(tmp_path):
+    """Un vrai certificat racine (le premier de certifi) joue le rôle du CA d'entreprise."""
+    first = re.search(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----",
+                      Path(certifi.where()).read_text(), re.S)
+    path = tmp_path / "corp.pem"
+    path.write_text(first.group(0) + "\n")
+    return path
 
 
 # ---------------------------------------------------------------- #
@@ -51,63 +74,59 @@ def test_count_ssl_failures_separates_causes():
 
 
 # ---------------------------------------------------------------- #
-# Construction de session
+# Session unique du terminal
 # ---------------------------------------------------------------- #
-def test_ca_bundle_takes_precedence_over_insecure(tmp_path):
-    """Le certificat l'emporte : on ne désactive jamais la vérification si on
-    dispose d'un moyen de la faire réussir."""
-    bundle = tmp_path / "corp.pem"
-    bundle.write_text("-----BEGIN CERTIFICATE-----\n")
-    session = configure_session(requests.Session(), insecure_ssl=True, ca_bundle=str(bundle))
-    assert session.verify == str(bundle)
-    assert session.verify is not False
+def test_providers_use_the_terminal_session():
+    session = session_for()
+    assert isinstance(session, core.SecureSession)
+    assert session.verify is not False and "Mozilla" in session.headers["User-Agent"]
+    assert session_for() is session                     # partagée dans le processus
 
 
-def test_insecure_disables_verification_only_when_no_bundle():
-    session = configure_session(requests.Session(), insecure_ssl=True, ca_bundle=None)
-    assert session.verify is False
+def test_verification_cannot_be_disabled():
+    with pytest.raises(core.InsecureTLSError):
+        session_for().verify = False
+    with pytest.raises(core.InsecureTLSError):
+        session_for().get("https://example.org", verify=False)
 
 
-def test_missing_bundle_is_ignored_not_silently_trusted(tmp_path):
-    """Un chemin de certificat invalide ne doit pas dégrader en mode non vérifié."""
-    session = configure_session(requests.Session(), insecure_ssl=False,
-                                ca_bundle=str(tmp_path / "absent.pem"))
-    assert session.verify is not False
+def test_corporate_bundle_is_added_to_the_trust(bundle):
+    session = session_for(str(bundle))
+    assert bundle.name in session.trust.description
 
 
-def test_default_session_keeps_standard_verification():
-    session = configure_session(requests.Session())
-    assert session.verify is not False
-    assert "Mozilla" in session.headers["User-Agent"]
-
-
-def test_build_session_returns_none_without_customisation():
-    """Sans réglage particulier, yfinance conserve curl_cffi (anti-bot)."""
-    assert build_session(insecure_ssl=False, ca_bundle=None) is None
-    assert build_session(insecure_ssl=True) is not None
+def test_missing_bundle_is_ignored_not_silently_trusted(tmp_path, monkeypatch):
+    """Un chemin de certificat invalide ne doit pas dégrader la vérification."""
+    for name in NETWORK_VARS:
+        monkeypatch.delenv(name, raising=False)
+    session = session_for(str(tmp_path / "absent.pem"))
+    assert session.verify is not False and session.settings.ca_bundle is None
 
 
 # ---------------------------------------------------------------- #
 # Environnement
 # ---------------------------------------------------------------- #
-def test_env_defaults_read_standard_variables(monkeypatch, tmp_path):
-    bundle = tmp_path / "ca.pem"
-    bundle.write_text("x")
-    for name in ("PI_INSECURE_SSL", "INSECURE_SSL", "PI_CA_BUNDLE", "CA_BUNDLE",
-                 "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"):
+def test_env_ca_bundle_reads_standard_variables(monkeypatch, bundle):
+    for name in NETWORK_VARS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(bundle))
-    monkeypatch.setenv("PI_INSECURE_SSL", "oui")
-    insecure, ca = env_defaults()
-    assert insecure is True
-    assert ca == str(bundle)
+    assert env_ca_bundle() == str(bundle)
+    monkeypatch.setenv("PI_CA_BUNDLE", str(bundle))
+    assert env_ca_bundle() == str(bundle)
 
 
-def test_env_defaults_are_off_by_default(monkeypatch):
-    for name in ("PI_INSECURE_SSL", "INSECURE_SSL", "PI_CA_BUNDLE", "CA_BUNDLE",
-                 "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"):
+def test_legacy_insecure_switch_is_ignored(monkeypatch):
+    for name in NETWORK_VARS:
         monkeypatch.delenv(name, raising=False)
-    assert env_defaults() == (False, "")
+    monkeypatch.setenv("PI_INSECURE_SSL", "oui")
+    assert env_ca_bundle() == ""
+    assert session_for().verify is not False
+
+
+def test_no_insecure_tls_in_the_sources():
+    root = Path(__file__).resolve().parents[1]
+    assert insecure_tls_uses([root / d for d in ("app.py", "config", "data", "services", "views",
+                                                 "components", "utils", "models")]) == []
 
 
 def test_discover_returns_existing_files_only():
@@ -122,52 +141,34 @@ def test_proxy_env_lists_active_variables(monkeypatch):
 # ---------------------------------------------------------------- #
 # Diagnostic
 # ---------------------------------------------------------------- #
-def test_describe_reflects_configuration(tmp_path):
-    bundle = tmp_path / "corp.pem"
-    bundle.write_text("x")
-    assert "Certificat d'entreprise" in describe(False, str(bundle))
-    assert "désactivée" in describe(True, None)
-    assert "directe" in describe(False, None)
+def test_describe_reflects_configuration(bundle, tmp_path):
+    assert "corp.pem" in describe(str(bundle))
+    assert describe(None).startswith("Vérification SSL active")
+    assert "introuvable" in describe(str(tmp_path / "absent.pem"))
 
 
 def test_check_endpoint_qualifies_dns_failure():
     result = check_endpoint("https://hote-inexistant.invalid/", timeout=5)
     assert result["ok"] is False
-    assert result["kind"] in ("dns", "error", "proxy", "timeout")
+    assert result["kind"] in ("dns", "error", "proxy", "timeout", "blocked")
     assert result["hint"]
 
 
 # ---------------------------------------------------------------- #
 # Réglages à chaud (bouton SSL, saisie de clé)
 # ---------------------------------------------------------------- #
-def test_ssl_toggle_is_reversible():
-    """Réactiver la vérification doit vraiment la rétablir.
-
-    Régression : une première version ne remettait jamais `verify` à True, ce
-    qui rendait le bouton à sens unique — une session dégradée le restait
-    jusqu'au redémarrage.
-    """
-    session = requests.Session()
-    configure_session(session, insecure_ssl=True)
-    assert session.verify is False
-    configure_session(session, insecure_ssl=False)
-    assert session.verify is True
-    configure_session(session, insecure_ssl=True)
-    assert session.verify is False
-
-
-def test_service_applies_network_policy_to_all_providers():
+def test_certificate_change_is_applied_to_all_providers_and_reversible(bundle):
     from data.market_data import MarketDataService
 
     service = MarketDataService()
-    service.set_network(True, None)
-    assert service.fmp._session.verify is False
-    assert service.yahoo._session.verify is False
-    assert "désactivée" in service.network_summary()
+    service.set_network(str(bundle))
+    assert service.fmp._session.settings.ca_bundle == bundle
+    assert service.yahoo._session is service.fmp._session
+    assert "corp.pem" in service.network_summary()
 
-    service.set_network(False, None)
-    assert service.fmp._session.verify is True
-    assert service.yahoo._session.verify is True
+    service.set_network(None)
+    assert service.fmp._session.settings.ca_bundle != bundle
+    assert service.fmp._session.verify is not False
 
 
 def test_api_key_override_takes_priority_and_is_masked():
@@ -199,12 +200,10 @@ def test_local_config_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "LOCAL_CONFIG_PATH", path)
 
     runtime.save_local_config(fmp_api_key="cle-secrete", insecure_ssl=True)
-    assert runtime.load_local_config()["fmp_api_key"] == "cle-secrete"
-    assert runtime.load_local_config()["insecure_ssl"] is True
+    assert runtime.load_local_config() == {"fmp_api_key": "cle-secrete"}   # contournement refusé
 
-    runtime.save_local_config(insecure_ssl=False)          # fusion, pas remplacement
-    assert runtime.load_local_config()["fmp_api_key"] == "cle-secrete"
-    assert runtime.load_local_config()["insecure_ssl"] is False
+    runtime.save_local_config(ca_bundle="/chemin/corp.pem")   # fusion, pas remplacement
+    assert runtime.load_local_config() == {"fmp_api_key": "cle-secrete", "ca_bundle": "/chemin/corp.pem"}
 
     assert runtime.clear_local_config()
     assert runtime.load_local_config() == {}

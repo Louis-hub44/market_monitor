@@ -54,7 +54,6 @@ class MarketDataService:
         self.journal: list[FetchRecord] = []
 
         # État réseau courant : environnement d'abord, puis overrides persistés.
-        self.insecure_ssl = self.settings.insecure_ssl
         self.ca_bundle = self.settings.ca_bundle
         self._apply_local_config()
 
@@ -67,11 +66,8 @@ class MarketDataService:
             return
         if config.get("fmp_api_key"):
             self.fmp.api_key_override = config["fmp_api_key"]
-        if "insecure_ssl" in config or "ca_bundle" in config:
-            self.set_network(
-                bool(config.get("insecure_ssl", self.insecure_ssl)),
-                config.get("ca_bundle", self.ca_bundle),
-            )
+        if config.get("ca_bundle"):
+            self.set_network(config["ca_bundle"])
 
     def set_api_key(self, key: str | None, persist: bool = False) -> None:
         """Applique une clé FMP saisie dans l'interface, sans redémarrage."""
@@ -81,15 +77,17 @@ class MarketDataService:
         if persist:
             save_local_config(fmp_api_key=key or "")
 
-    def set_network(self, insecure_ssl: bool, ca_bundle: str | None,
-                    persist: bool = False) -> None:
-        """Change la politique SSL à chaud sur tous les fournisseurs."""
-        self.insecure_ssl = bool(insecure_ssl)
+    def set_network(self, ca_bundle: str | None, persist: bool = False) -> None:
+        """Change le certificat d'entreprise à chaud sur tous les fournisseurs.
+
+        La vérification SSL reste toujours active (session unique du terminal) ;
+        sans certificat, le magasin de certificats du poste fait foi.
+        """
         self.ca_bundle = (ca_bundle or "").strip()
         for provider in (self.bloomberg, self.fmp, self.yahoo):
-            provider.set_ssl_policy(self.insecure_ssl, self.ca_bundle or None)
+            provider.set_ssl_policy(self.ca_bundle or None)
         if persist:
-            save_local_config(insecure_ssl=self.insecure_ssl, ca_bundle=self.ca_bundle)
+            save_local_config(ca_bundle=self.ca_bundle)
 
     def forget_local_config(self) -> bool:
         """Efface les réglages persistés (la clé reste active jusqu'au redémarrage)."""
@@ -515,7 +513,7 @@ class MarketDataService:
         return check_connectivity(self.fmp._session, timeout=self.settings.http_timeout_s)
 
     def network_summary(self) -> str:
-        return describe_network(self.insecure_ssl, self.ca_bundle)
+        return describe_network(self.ca_bundle)
 
     def journal_rows(self) -> list[dict[str, Any]]:
         return [

@@ -36,7 +36,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from data.network import apply_to_yfinance, build_session, looks_like_ssl_error
+from data.network import apply_to_yfinance, looks_like_ssl_error
 from data.providers.base import BaseProvider, ProviderUnavailable
 
 try:
@@ -78,20 +78,16 @@ class YahooProvider(BaseProvider):
 
     def __init__(self) -> None:
         super().__init__(rate_limit_per_min=60)
-        # yfinance utilise curl_cffi par défaut (impersonation de navigateur,
-        # utile face aux protections anti-bot de Yahoo). On ne lui impose une
-        # session `requests` que si le poste a besoin d'une politique SSL
-        # particulière — sinon on lui laisse son comportement natif.
-        self.yf_session = build_session(
-            insecure_ssl=self.settings.insecure_ssl,
-            ca_bundle=self.settings.ca_bundle,
-        )
+        # yfinance reçoit la session unique du terminal (proxy, magasin de
+        # certificats) au lieu de son client curl_cffi natif : aucune requête
+        # ne doit échapper à la politique réseau.
+        self.yf_session = self._session
         self.yf_session_applied = apply_to_yfinance(self.yf_session)
 
-    def set_ssl_policy(self, insecure_ssl: bool, ca_bundle: str | None) -> None:
-        """Reconstruit la session yfinance avec la nouvelle politique SSL."""
-        super().set_ssl_policy(insecure_ssl, ca_bundle)
-        self.yf_session = build_session(insecure_ssl=insecure_ssl, ca_bundle=ca_bundle)
+    def set_ssl_policy(self, ca_bundle: str | None) -> None:
+        """Rebranche yfinance sur la session du nouveau certificat."""
+        super().set_ssl_policy(ca_bundle)
+        self.yf_session = self._session
         self.yf_session_applied = apply_to_yfinance(self.yf_session)
 
     @property
@@ -100,11 +96,8 @@ class YahooProvider(BaseProvider):
 
     def health(self) -> dict:
         info = super().health()
-        info["session"] = (
-            "session d'entreprise appliquée" if self.yf_session_applied
-            else ("curl_cffi natif" if self.yf_session is None
-                  else "session construite mais non appliquée à yfinance")
-        )
+        info["session"] = ("session du terminal appliquée" if self.yf_session_applied
+                           else "session du terminal non appliquée à yfinance")
         return info
 
     def _guard(self) -> None:

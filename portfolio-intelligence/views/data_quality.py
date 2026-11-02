@@ -82,13 +82,14 @@ if st.session_state.get("pi_ssl_blocked") or any(h.get("ssl_blocked") for h in m
         else:
             st.caption("Aucun magasin de certificats reconnu automatiquement sur ce poste.")
         st.markdown(
-            "**2. Contournement — dépannage uniquement.** Désactive la vérification des "
-            "certificats. À n'utiliser que sur un réseau d'entreprise de confiance, "
-            "jamais sur un réseau public ni sur un poste qui passe des ordres."
+            "**2. Magasin de certificats du poste.** Avec le paquet `truststore` (installé "
+            "avec la plateforme), le certificat que l'informatique a déployé sur le poste "
+            "est reconnu sans configuration. La vérification SSL n'est jamais désactivée."
         )
         st.markdown("**Pour figer le réglage sans repasser par l'interface**, dans `.env` :")
-        st.code("PI_CA_BUNDLE=/chemin/vers/entreprise.pem\n# ou, en dépannage :\nPI_INSECURE_SSL=1",
-                language="bash")
+        st.code("PI_CA_BUNDLE=/chemin/vers/entreprise.pem\n# proxy explicite si nécessaire :\n"
+                "TERMINAL_HTTPS_PROXY=http://proxy.entreprise.local:8080\n"
+                "# diagnostic complet : check-network", language="bash")
 
 st.divider()
 st.markdown("#### Bloomberg (Desktop API)")

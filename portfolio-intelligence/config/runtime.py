@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCAL_CONFIG_PATH = Path(os.getenv("LOCAL_CONFIG_FILE", ROOT / ".local_config.json"))
 
 #: Clés autorisées dans le fichier local — tout le reste est ignoré.
-ALLOWED_KEYS = ("fmp_api_key", "insecure_ssl", "ca_bundle")
+ALLOWED_KEYS = ("fmp_api_key", "ca_bundle")   # insecure_ssl n'est plus accepté
 
 
 def load_local_config() -> dict[str, Any]:
