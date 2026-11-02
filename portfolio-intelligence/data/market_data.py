@@ -17,13 +17,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from config.runtime import clear_local_config, load_local_config, mask_key, save_local_config
 from config.settings import get_settings
 from data.network import check_connectivity, describe as describe_network
 from data.providers.base import ProviderUnavailable
-from data.providers.bloomberg import EQUITY_FIELDS, BloombergProvider, to_bloomberg_ticker
 from data.providers.fmp import FMPProvider
 from data.providers.yahoo import YahooProvider
 from models.datapoint import DataPoint, missing, reconcile
@@ -45,10 +44,7 @@ class FetchRecord:
 class MarketDataService:
     def __init__(self) -> None:
         self.settings = get_settings()
-        # Ordre de la chaîne : Bloomberg (source de référence du poste) puis
-        # FMP puis Yahoo. Bloomberg n'a ni clé ni quota — il a des *droits*,
-        # et un champ hors abonnement revient vide, d'où le repli systématique.
-        self.bloomberg = BloombergProvider()
+        # Ordre de la chaîne : FMP puis Yahoo, puis cache périmé.
         self.fmp = FMPProvider()
         self.yahoo = YahooProvider()
         self.journal: list[FetchRecord] = []
@@ -84,7 +80,7 @@ class MarketDataService:
         sans certificat, le magasin de certificats du poste fait foi.
         """
         self.ca_bundle = (ca_bundle or "").strip()
-        for provider in (self.bloomberg, self.fmp, self.yahoo):
+        for provider in (self.fmp, self.yahoo):
             provider.set_ssl_policy(self.ca_bundle or None)
         if persist:
             save_local_config(ca_bundle=self.ca_bundle)
@@ -124,17 +120,6 @@ class MarketDataService:
         les résultats : deux valeurs concordantes donnent un niveau VERIFIED."""
         t0 = time.perf_counter()
         points: list[DataPoint[float]] = []
-
-        if self.bloomberg.is_configured:
-            try:
-                raw = self.bloomberg.prices([to_bloomberg_ticker(symbol)])
-                for fields in raw.values():
-                    if fields.get("PX_LAST") is not None:
-                        points.append(DataPoint(float(fields["PX_LAST"]),
-                                                DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                                as_of=date.today(), note="PX_LAST"))
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg price %s: %s", symbol, exc)
 
         try:
             q, stale = self.fmp.quote(symbol)
@@ -178,17 +163,6 @@ class MarketDataService:
         t0 = time.perf_counter()
         start = date.today() - timedelta(days=lookback_days)
 
-        if self.bloomberg.is_configured:
-            try:
-                rows = self.bloomberg.history(to_bloomberg_ticker(symbol), start)
-                if rows:
-                    dp = DataPoint(rows, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                   as_of=date.fromisoformat(rows[-1]["date"]),
-                                   note=f"{len(rows)} observations (BDH quotidien)")
-                    self._record(f"series:{symbol}", "BLOOMBERG", dp.quality, t0, dp.note)
-                    return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg series %s: %s", symbol, exc)
 
         for fetch, source in ((self.fmp.price_history, "FMP"), (self.yahoo.price_history, "YAHOO")):
             try:
@@ -221,10 +195,9 @@ class MarketDataService:
     def treasury_curve(self, country: str = "US") -> DataPoint[dict[str, float]]:
         """Courbe souveraine la plus récente, en décimal ({'10Y': 0.0428}).
 
-        Bloomberg couvre toutes les courbes déclarées dans
-        `BLOOMBERG_CURVE_TICKERS` (US, Bund, OAT, BTP, Gilt, JGB). Sans
-        Bloomberg, seule la courbe US est atteignable — c'était la limite
-        signalée depuis le début du projet.
+        Seule la courbe US est servie ici (FMP, repli Yahoo). Les courbes EUR
+        (Bund, OAT, BTP, Bonos) viennent du module Rates & Bond Analytics
+        (BCE, Bundesbank, Stooq), utilisé par le moteur de stress.
 
         Source de référence : le Trésor américain publie officiellement cette
         courbe ; FMP la redistribue. Une donnée redistribuée est marquée
@@ -236,22 +209,11 @@ class MarketDataService:
             "year1": "1Y", "year2": "2Y", "year3": "3Y", "year5": "5Y",
             "year7": "7Y", "year10": "10Y", "year20": "20Y", "year30": "30Y",
         }
-        if self.bloomberg.is_configured:
-            try:
-                curve = self.bloomberg.curve(country)
-                if curve:
-                    dp = DataPoint(curve, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                   as_of=date.today(),
-                                   note=f"Courbe {country} par tickers génériques Bloomberg")
-                    self._record(f"curve:{country}", "BLOOMBERG", dp.quality, t0, dp.note)
-                    return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg curve %s: %s", country, exc)
 
         if country != "US":
             # Ni FMP ni Yahoo n'exposent les courbes non américaines.
-            dp = missing(note=(f"Courbe {country} indisponible sans Bloomberg : FMP et Yahoo "
-                               f"ne publient que la courbe US."))
+            dp = missing(note=(f"Courbe {country} non servie ici : FMP et Yahoo ne publient que la "
+                               f"courbe US (courbes EUR : module Rates & Bond Analytics)."))
             self._record(f"curve:{country}", "NONE", dp.quality, t0, dp.note)
             return dp
 
@@ -295,25 +257,12 @@ class MarketDataService:
     # Calendriers
     # ------------------------------------------------------------------ #
     def economic_calendar(self, days_ahead: int = 14) -> DataPoint[list[dict[str, Any]]]:
-        """Calendrier macro : Bloomberg, sinon FMP, sinon rien.
+        """Calendrier macro : FMP, sinon rien.
 
-        C'est le seul domaine où Yahoo n'offre aucun repli. Bloomberg le couvre
-        entièrement, consensus compris, via les tickers de séries économiques.
+        C'est le seul domaine où Yahoo n'offre aucun repli.
         """
         t0 = time.perf_counter()
         today = date.today()
-
-        if self.bloomberg.is_configured:
-            try:
-                rows = self.bloomberg.economic_calendar(today, today + timedelta(days=days_ahead))
-                if rows:
-                    note = f"{len(rows)} publications macro (consensus BN_SURVEY_MEDIAN)"
-                    dp = DataPoint(rows, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                   as_of=today, note=note)
-                    self._record("calendar:macro", "BLOOMBERG", dp.quality, t0, note)
-                    return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg macro calendar: %s", exc)
 
         try:
             rows, stale = self.fmp.economic_calendar(today, today + timedelta(days=days_ahead))
@@ -339,20 +288,6 @@ class MarketDataService:
         t0 = time.perf_counter()
         today = date.today()
         end = today + timedelta(days=days_ahead)
-
-        if self.bloomberg.is_configured and symbols:
-            try:
-                tickers = [to_bloomberg_ticker(s, "EQUITY") for s in symbols]
-                rows = [r for r in self.bloomberg.earnings_dates(tickers)
-                        if today.isoformat() <= r["date"] <= end.isoformat()]
-                if rows:
-                    note = f"{len(rows)} publications attendues (EXPECTED_REPORT_DT)"
-                    dp = DataPoint(rows, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                   as_of=today, note=note)
-                    self._record("calendar:earnings", "BLOOMBERG", dp.quality, t0, note)
-                    return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg earnings calendar: %s", exc)
 
         try:
             rows, stale = self.fmp.earnings_calendar(today, end)
@@ -385,16 +320,6 @@ class MarketDataService:
     def earnings(self, symbol: str, limit: int = 12) -> DataPoint[list[dict[str, Any]]]:
         """Publications de résultats, format commun aux deux sources."""
         t0 = time.perf_counter()
-        if self.bloomberg.is_configured:
-            try:
-                rows = self.bloomberg.earnings_dates([to_bloomberg_ticker(symbol, "EQUITY")])
-                if rows:
-                    dp = DataPoint(rows, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                   note="date attendue et consensus Bloomberg")
-                    self._record(f"earnings:{symbol}", "BLOOMBERG", dp.quality, t0, dp.note)
-                    return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg earnings %s: %s", symbol, exc)
 
         for source, fetch in (("FMP", self.fmp.earnings), ("YAHOO", self.yahoo.earnings)):
             try:
@@ -416,19 +341,6 @@ class MarketDataService:
     def fundamentals(self, symbol: str) -> DataPoint[dict[str, Any]]:
         """Multiples et marges courants (FMP `ratios`+`key-metrics`, sinon Yahoo `info`)."""
         t0 = time.perf_counter()
-        if self.bloomberg.is_configured:
-            try:
-                raw = self.bloomberg.equity_fundamentals([to_bloomberg_ticker(symbol, "EQUITY")])
-                for fields in raw.values():
-                    payload = {label: fields[code] for label, code in EQUITY_FIELDS.items()
-                               if fields.get(code) is not None}
-                    if payload:
-                        dp = DataPoint(payload, DataQuality.API_CONFIRMED, "BLOOMBERG",
-                                       note="ratios Bloomberg (PE_RATIO, BEST_PE_RATIO…)")
-                        self._record(f"fundamentals:{symbol}", "BLOOMBERG", dp.quality, t0, dp.note)
-                        return dp
-            except ProviderUnavailable as exc:
-                log.info("Bloomberg fundamentals %s: %s", symbol, exc)
 
         try:
             ratios, stale_a = self.fmp.ratios(symbol, period="annual", limit=1)
@@ -473,31 +385,8 @@ class MarketDataService:
         return missing(note=f"Comptes annuels indisponibles pour {symbol}")
 
     # ------------------------------------------------------------------ #
-    def bond_analytics(self, positions) -> dict[str, dict[str, Any]]:
-        """Sensibilités obligataires calculées par Bloomberg, par identifiant.
-
-        Renvoie un dictionnaire vide si Bloomberg est absent : l'appelant
-        retombe alors sur le calcul interne.
-        """
-        if not self.bloomberg.is_configured or not positions:
-            return {}
-        t0 = time.perf_counter()
-        mapping = {
-            to_bloomberg_ticker(p.identifier, p.asset_class.value): p.identifier
-            for p in positions
-        }
-        try:
-            raw = self.bloomberg.bond_analytics(list(mapping))
-        except ProviderUnavailable as exc:
-            log.info("Bloomberg bond analytics: %s", exc)
-            return {}
-        out = {mapping[ticker]: fields for ticker, fields in raw.items() if ticker in mapping}
-        self._record(f"bond_analytics:{len(out)}", "BLOOMBERG",
-                     DataQuality.API_CONFIRMED, t0, f"{len(out)}/{len(mapping)} lignes")
-        return out
-
     def health(self) -> list[dict[str, Any]]:
-        return [self.bloomberg.health(), self.fmp.health(), self.yahoo.health()]
+        return [self.fmp.health(), self.yahoo.health()]
 
     @property
     def ssl_blocked(self) -> bool:

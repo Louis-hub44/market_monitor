@@ -92,33 +92,6 @@ if st.session_state.get("pi_ssl_blocked") or any(h.get("ssl_blocked") for h in m
                 "# diagnostic complet : check-network", language="bash")
 
 st.divider()
-st.markdown("#### Bloomberg (Desktop API)")
-bbg = md.bloomberg
-c1, c2 = st.columns([2, 1])
-with c1:
-    if not bbg.library_available:
-        st.warning(
-            "Paquet `blpapi` absent. Installation depuis l'index Bloomberg :\n\n"
-            "`pip install --index-url=https://blpapi.bloomberg.com/repository/"
-            "releases/python/simple blpapi`"
-        )
-    elif not bbg.is_configured:
-        st.info("Bloomberg désactivé (ENABLE_BLOOMBERG=false ou mode hors ligne).")
-    else:
-        st.success(f"Bibliothèque présente — cible {bbg.host}:{bbg.port}")
-    st.caption(
-        "La Desktop API exige un Terminal lancé et une session ouverte sur ce poste. "
-        "Il n'y a ni clé ni jeton : les droits sont ceux de l'utilisateur connecté, "
-        "et un champ hors abonnement revient vide plutôt qu'en erreur."
-    )
-with c2:
-    if st.button("Tester Bloomberg", width="stretch", disabled=not bbg.library_available):
-        with st.spinner("Interrogation du Terminal…"):
-            results = bbg.self_test()
-        st.dataframe(pd.DataFrame([{"capacité": k, "statut": v} for k, v in results.items()]),
-                     width="stretch", hide_index=True)
-
-st.divider()
 st.markdown("#### Clé API")
 c1, c2 = st.columns([2, 1])
 c1.markdown(f"Clé FMP : **{md.api_key_display()}** — source : {md.api_key_source()}")

@@ -62,41 +62,6 @@ FX_PROXIES: dict[str, str] = {
 TRADING_DAYS_PER_YEAR = 252
 
 # --------------------------------------------------------------------- #
-# Bloomberg — identifiants de séries suivies
-# --------------------------------------------------------------------- #
-#: Tickers génériques de courbe souveraine. Ce sont des *identifiants*, pas des
-#: niveaux : les taux sont toujours récupérés en direct.
-BLOOMBERG_CURVE_TICKERS: dict[str, dict[str, str]] = {
-    "US": {"3M": "USGG3M Index", "1Y": "USGG12M Index", "2Y": "USGG2YR Index",
-           "5Y": "USGG5YR Index", "10Y": "USGG10YR Index", "20Y": "USGG20YR Index",
-           "30Y": "USGG30YR Index"},
-    "DE": {"2Y": "GTDEM2Y Govt", "5Y": "GTDEM5Y Govt", "10Y": "GTDEM10Y Govt",
-           "20Y": "GTDEM20Y Govt", "30Y": "GTDEM30Y Govt"},
-    "FR": {"2Y": "GTFRF2Y Govt", "5Y": "GTFRF5Y Govt", "10Y": "GTFRF10Y Govt",
-           "20Y": "GTFRF20Y Govt", "30Y": "GTFRF30Y Govt"},
-    "IT": {"2Y": "GTITL2Y Govt", "5Y": "GTITL5Y Govt", "10Y": "GTITL10Y Govt",
-           "30Y": "GTITL30Y Govt"},
-    "GB": {"2Y": "GTGBP2Y Govt", "5Y": "GTGBP5Y Govt", "10Y": "GTGBP10Y Govt",
-           "30Y": "GTGBP30Y Govt"},
-    "JP": {"2Y": "GTJPY2Y Govt", "5Y": "GTJPY5Y Govt", "10Y": "GTJPY10Y Govt",
-           "30Y": "GTJPY30Y Govt"},
-}
-
-#: Publications macro suivies par l'Event Radar, par ticker de release Bloomberg.
-#: Liste volontairement courte et éditable : chaque ligne coûte une requête.
-BLOOMBERG_ECO_TICKERS: dict[str, dict[str, str]] = {
-    "FDTR Index": {"label": "Décision Fed (Fed Funds Target)", "country": "US", "factor": "RATES"},
-    "EURR002W Index": {"label": "Décision BCE (taux de refi)", "country": "EU", "factor": "RATES"},
-    "UKBRBASE Index": {"label": "Décision BoE (Bank Rate)", "country": "GB", "factor": "RATES"},
-    "CPI YOY Index": {"label": "CPI Etats-Unis (a/a)", "country": "US", "factor": "INFLATION"},
-    "ECCPEMUY Index": {"label": "CPI zone euro (a/a)", "country": "EU", "factor": "INFLATION"},
-    "NFP TCH Index": {"label": "Emploi non agricole (NFP)", "country": "US", "factor": "GROWTH"},
-    "GDP CQOQ Index": {"label": "PIB Etats-Unis (t/t annualise)", "country": "US", "factor": "GROWTH"},
-    "MPMIEZMA Index": {"label": "PMI manufacturier zone euro", "country": "EU", "factor": "GROWTH"},
-    "NAPMPMI Index": {"label": "ISM manufacturier", "country": "US", "factor": "GROWTH"},
-}
-
-# --------------------------------------------------------------------- #
 # Hypothèses de modèle (repli explicite)
 # --------------------------------------------------------------------- #
 DEFAULT_MODEL_ASSUMPTIONS: dict = {

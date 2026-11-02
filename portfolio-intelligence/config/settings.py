@@ -49,14 +49,6 @@ class Settings:
     fmp_rate_limit_per_min: int = field(default_factory=lambda: _int("FMP_RATE_LIMIT_PER_MIN", 250))
     enable_yahoo: bool = field(default_factory=lambda: _flag("ENABLE_YAHOO", True))
 
-    # --- Bloomberg (Desktop API) ------------------------------------ #
-    # Le Terminal doit tourner sur le poste et la session être ouverte : la DAPI
-    # n'écoute qu'en local et hérite des droits de l'utilisateur connecté.
-    enable_bloomberg: bool = field(default_factory=lambda: _flag("ENABLE_BLOOMBERG", True))
-    bloomberg_host: str = field(default_factory=lambda: os.getenv("BLOOMBERG_HOST", "localhost"))
-    bloomberg_port: int = field(default_factory=lambda: _int("BLOOMBERG_PORT", 8194))
-    bloomberg_timeout_ms: int = field(default_factory=lambda: _int("BLOOMBERG_TIMEOUT_MS", 20_000))
-    bloomberg_batch_size: int = field(default_factory=lambda: _int("BLOOMBERG_BATCH_SIZE", 100))
     http_timeout_s: int = field(default_factory=lambda: _int("HTTP_TIMEOUT_S", 15))
     http_retries: int = field(default_factory=lambda: _int("HTTP_RETRIES", 3))
     max_workers: int = field(default_factory=lambda: _int("MAX_WORKERS", 8))
@@ -94,8 +86,6 @@ class Settings:
             "FMP_API_KEY": f"{key[:4]}…{key[-2:]}" if key else "non configurée",
             "FMP_BASE_URL": self.fmp_base_url,
             "ENABLE_YAHOO": str(self.enable_yahoo),
-            "BLOOMBERG": (f"{self.bloomberg_host}:{self.bloomberg_port}"
-                          if self.enable_bloomberg else "désactivé"),
             "OFFLINE_MODE": str(self.offline_mode),
             "PI_CA_BUNDLE": self.ca_bundle or "aucun",
             "BASE_CURRENCY": self.base_currency,

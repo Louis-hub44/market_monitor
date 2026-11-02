@@ -8,7 +8,6 @@ from pathlib import Path
 
 import certifi
 import pytest
-import requests
 from terminal_core import network as core
 from terminal_core.guards import insecure_tls_uses
 

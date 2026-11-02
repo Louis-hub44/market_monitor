@@ -109,8 +109,6 @@ def sidebar() -> None:
         health = md.health()
         for provider in health:
             state = "connecté" if provider["configured"] else "non configuré"
-            if provider["provider"] == "BLOOMBERG" and not provider["configured"]:
-                state = "Terminal absent"
             st.markdown(
                 f"{provider['provider']} · {state} "
                 + (quality_badge("UNVERIFIED", provider["last_error"] or "")

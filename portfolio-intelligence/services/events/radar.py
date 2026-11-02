@@ -126,11 +126,6 @@ def build_radar(portfolio: Portfolio, market_data, days_ahead: int = 21) -> tupl
             )
     else:
         warnings.append(f"Calendrier de résultats : {earnings.note}")
-    if macro.is_usable and macro.source != "BLOOMBERG":
-        warnings.append(
-            "Calendrier macro hors Bloomberg : la couverture des banques centrales "
-            "et des statistiques dépend du plan FMP souscrit."
-        )
     if earnings.is_usable and earnings.source == "YAHOO":
         warnings.append(
             "Résultats reconstitués via Yahoo, titre par titre : seules les lignes du "
@@ -140,6 +135,10 @@ def build_radar(portfolio: Portfolio, market_data, days_ahead: int = 21) -> tupl
     # --- macro et banques centrales ----------------------------------- #
     macro: DataPoint = market_data.economic_calendar(days_ahead)
     if macro.is_usable:
+        warnings.append(
+            "Calendrier macro FMP : la couverture des banques centrales "
+            "et des statistiques dépend du plan souscrit."
+        )
         exposures = portfolio.exposure_by_asset_class()
         rate_exposure = exposures.get("GOV_BOND", 0.0) + exposures.get("CREDIT", 0.0)
         equity_exposure = exposures.get("EQUITY", 0.0)
@@ -151,7 +150,7 @@ def build_radar(portfolio: Portfolio, market_data, days_ahead: int = 21) -> tupl
             if not when:
                 continue
             importance, factor = _match_importance(title)
-            # Bloomberg qualifie lui-même la série (taux, inflation, croissance) :
+            # Si la source qualifie elle-même la série (taux, inflation, croissance),
             # on préfère son classement à notre reconnaissance par mots-clés.
             declared = row.get("factor")
             if declared:

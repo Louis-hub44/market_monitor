@@ -7,19 +7,16 @@ en cache et invalidés uniquement quand le portefeuille change.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import streamlit as st
 
-from config.constants import BLOOMBERG_CURVE_TICKERS
 from config.settings import get_settings
 from data.market_data import MarketDataService, get_market_data
 from models.portfolio import Portfolio
 from services.equity.factors import estimate_betas
 from services.fixed_income.analytics import FixedIncomeAnalytics, analyse_portfolio
 from services.fixed_income.curves import build_curves
-from services.portfolio.enrichment import enrich_bond_risks
 from services.scenarios.engine import ScenarioEngine, SensitivitySet
 
 PORTFOLIO_KEY = "pi_portfolio"
@@ -72,29 +69,19 @@ def _memo(key: str, builder):
 
 
 def curves() -> dict:
-    """Courbes souveraines disponibles.
+    """Courbes souveraines disponibles ici : la courbe US (FMP, repli Yahoo).
 
-    Avec Bloomberg, les six courbes déclarées sont récupérées ; sans lui, seule
-    la courbe US est atteignable — les positions en euro retombent alors sur les
-    sensibilités analytiques.
+    Les positions en euro retombent sur les sensibilités analytiques ; la
+    revalorisation sur courbes EUR relève du module Rates & Bond Analytics.
     """
     def build():
         md = market_data()
-        countries = ["US"]
-        if md.bloomberg.is_configured:
-            countries = list(BLOOMBERG_CURVE_TICKERS)
-        return build_curves({code: md.treasury_curve(code) for code in countries})
+        return build_curves({"US": md.treasury_curve("US")})
     return _memo("curves", build)
-
-
-def bloomberg_enrichment(portfolio: Portfolio):
-    """Applique une fois par portefeuille les sensibilités Bloomberg."""
-    return _memo(f"bbg_{id(portfolio)}", lambda: enrich_bond_risks(portfolio, market_data()))
 
 
 def fixed_income_analytics(portfolio: Portfolio) -> FixedIncomeAnalytics:
     def build():
-        bloomberg_enrichment(portfolio)      # enrichit les positions sur place
         return analyse_portfolio(portfolio, curves())
     return _memo(f"fi_{id(portfolio)}", build)
 

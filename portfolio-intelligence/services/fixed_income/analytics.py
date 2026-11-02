@@ -105,21 +105,6 @@ def analyse_position(position: Position, curves: dict[str, ZeroCurve] | None = N
     note = ""
     quality = DataQuality.API_CONFIRMED
 
-    # Priorité aux sensibilités fournies par une source de référence (Bloomberg) :
-    # elles intègrent les optionalités que notre noyau ne price pas, et elles
-    # coïncident avec ce que le gérant lit dans son Terminal.
-    if position.metadata.get("risk_source") == "BLOOMBERG" and position.modified_duration:
-        return PositionRisk(
-            position=position, weight_in_sleeve=0.0, weight_in_nav=0.0,
-            ttm=years_to_maturity(position.maturity) if position.maturity else 0.0,
-            ytm=position.ytm, modified_duration=position.modified_duration,
-            convexity=position.convexity or 0.0,
-            spread_duration=position.spread_duration,
-            key_rate_durations=dict(position.key_rate_durations),
-            quality=DataQuality.API_CONFIRMED,
-            note="Sensibilités calculées par Bloomberg (YAS) — option-adjusted",
-        )
-
     if not position.maturity or position.coupon is None:
         return PositionRisk(position=position, weight_in_sleeve=0.0, weight_in_nav=0.0,
                             ttm=0.0, ytm=None, modified_duration=None, convexity=None,

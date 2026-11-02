@@ -22,12 +22,6 @@ statsmodels>=0.14
 # --- tests ------------------------------------------------------------
 pytest>=8.0
 
-# --- Bloomberg Desktop API (optionnel, poste équipé uniquement) -------
-# blpapi N'EST PAS sur PyPI. Installation depuis l'index Bloomberg :
-#   pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
-# Prérequis : Terminal lancé, session ouverte, bibliothèque C++ sur le PATH
-# (variable BLPAPI_ROOT sous Windows). L'application fonctionne sans.
-
 # --- optionnel : pricing d'instruments à option -----------------------
 # Décommenter pour activer le moteur QuantLib (callables, FRN, inflation).
 # La plateforme fonctionne sans : le noyau obligataire est autonome.

@@ -42,7 +42,7 @@ démonstration sont fournis dans `samples/` (positions fictives — voir
 `samples/README.md`).
 
 ```bash
-pytest                      # 157 tests
+pytest                      # 135 tests
 ```
 
 ---
@@ -181,39 +181,6 @@ catégorie — dans cette application, le rouge signifie une perte.
 
 ---
 
-## Bloomberg (Desktop API)
-
-Quand le Terminal tourne sur le poste, Bloomberg passe **en tête de chaîne**
-pour toutes les données. Aucune clé à configurer : la Desktop API écoute sur
-`localhost:8194` et hérite des droits de l'utilisateur connecté.
-
-```bash
-pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
-```
-
-Prérequis : Terminal lancé et session ouverte, bibliothèque C++ sur le `PATH`
-(`BLPAPI_ROOT` sous Windows). Sans `blpapi`, l'application démarre normalement
-et bascule sur FMP puis Yahoo.
-
-Ce que Bloomberg apporte que les autres sources ne peuvent pas :
-
-| Domaine | Apport |
-| --- | --- |
-| **Calendrier macro** | Fed, BCE, BoE, CPI, NFP, PIB, PMI avec consensus (`BN_SURVEY_MEDIAN`). Aucun équivalent chez Yahoo, et dépendant du plan chez FMP. |
-| **Courbes non-USD** | Bund, OAT, BTP, Gilt, JGB par tickers génériques. C'était la limite principale du projet : sans Bloomberg, seule la courbe US est atteignable, et les lignes en euro perdent leurs key rate durations. |
-| **Analytique obligataire** | Duration option-adjusted (`YAS_MOD_DUR`), convexité, duration de spread, KRD, Z-spread et OAS — calculées par Bloomberg, donc **cohérentes avec YAS\<GO\>**. Elles remplacent notre calcul interne, qui ne price pas les optionalités (call, FRN, step-up). |
-| **Référentiel obligataire** | Coupon, maturité, fréquence, notations, prochaine date de call — de quoi compléter un fichier portefeuille incomplet. |
-| **Résultats et consensus** | `EXPECTED_REPORT_DT`, `BEST_EPS`, `BEST_SALES` par titre. |
-
-Vérification des droits : page **Qualité des données → Bloomberg → « Tester
-Bloomberg »**. Un champ hors abonnement revient **vide plutôt qu'en erreur**,
-c'est le seul moyen fiable de savoir ce que le poste couvre réellement.
-
-Les tickers de courbes et la liste des publications macro suivies sont éditables
-dans `config/constants.py` (`BLOOMBERG_CURVE_TICKERS`, `BLOOMBERG_ECO_TICKERS`).
-
----
-
 ## Sources de données : que peut faire Yahoo sans FMP ?
 
 Yahoo Finance (`yfinance`) sert de filet de secours quand la clé FMP manque ou
@@ -229,7 +196,7 @@ automatique et la qualité de la donnée est dégradée en conséquence.
 | Courbe des taux US | **approchée** — 4 points seulement (^IRX, ^FVX, ^TNX, ^TYX), interpolés | ESTIMATED |
 | Dividendes | **complète** | API_CONFIRMED |
 | Screener multicritère | **partielle** — `yfinance.screen` existe mais sans parité de filtres avec FMP ; non branché | — |
-| **Calendrier macro** (Fed, BCE, CPI, NFP) | **aucune** — c'est ce que Bloomberg couvre | — |
+| **Calendrier macro** (Fed, BCE, CPI, NFP) | **aucune** — FMP seul, selon le plan | — |
 
 Le dernier point est la vraie limite : sans FMP, l'Event Radar se réduit aux
 résultats de sociétés. Une source officielle (FRED, BCE Data Portal) serait le
@@ -282,9 +249,10 @@ politique réseau.
 
 ## Limites connues
 
-- **Courbes non-USD sans Bloomberg** : FMP et Yahoo ne publient que la courbe US.
-  Les lignes en euro retombent alors sur les sensibilités analytiques (pas de KRD).
-  Avec Bloomberg, les six courbes sont couvertes.
+- **Courbes non-USD** : FMP et Yahoo ne publient que la courbe US. Dans cette
+  application, les lignes en euro retombent sur les sensibilités analytiques (pas de
+  KRD). Les courbes EUR (Bund, OAT, BTP, Bonos) et la revalorisation complète
+  relèvent du module Rates & Bond Analytics, branché par le moteur de stress.
 - **Instruments à option** : callables, FRN et titres indexés inflation ne sont pas
   pricés correctement par le noyau. Activer QuantLib (`requirements.txt`) pour ces cas.
 - **Endpoints FMP payants** : calendrier de résultats et historique d'estimations

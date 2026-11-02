@@ -201,38 +201,14 @@ pas injecter de paramètres arbitraires). La clé y est **en clair**, comme dans
 `.env` : acceptable sur un poste dédié, pas sur un partage réseau — d'où le
 choix de ne rien persister par défaut.
 
-### 4.7 Bloomberg — source de référence du poste
-
-`BloombergProvider` occupe la tête de chaîne quand `blpapi` est présent et le
-Terminal ouvert. Trois particularités de conception :
-
-- **Séparation transport / transformation.** Le protocole blpapi est
-  impossible à exécuter hors poste équipé. Toutes les décisions — résolution de
-  ticker, normalisation des réponses, extraction des KRD, fenêtrage du
-  calendrier macro — sont des fonctions pures, testées. La couche transport
-  (`_connect`, `_send`) est réduite au minimum et marquée `pragma: no cover`.
-- **Les droits ne sont pas des erreurs.** Un champ hors abonnement revient
-  vide. `self_test()` sonde donc chaque capacité séparément et distingue
-  « indisponible » de « vide (droits insuffisants ?) » — sans quoi un
-  utilisateur conclurait à un bug là où il manque une souscription.
-- **Pas de politique SSL.** La DAPI est une socket locale : `set_ssl_policy`
-  est explicitement neutralisé. C'est aussi ce qui rend cette source insensible
-  aux proxys d'inspection d'entreprise traités en §4.4.
-
-**Priorité des sensibilités obligataires.** Quand Bloomberg répond, ses mesures
-(`YAS_MOD_DUR`, `CONVEXITY_MID`, KRD) remplacent notre calcul interne : elles
-intègrent les optionalités que `bond_math.py` ne price pas, et surtout elles
-coïncident avec ce que le gérant lit dans YAS\<GO\>. Un écart entre l'outil et
-le Terminal est une source de défiance immédiate, même quand les deux chiffres
-sont défendables. Les lignes que Bloomberg ne couvre pas gardent le calcul
-interne, et le rapport d'enrichissement les liste.
-
-### 4.8 Voie d'extension FactSet / LSEG
+### 4.7 Voie d'extension (nouvelle source)
 
 Un nouveau provider hérite de `BaseProvider` (qui apporte cache, rate limiting,
 retries) et s'insère en tête de chaîne dans `MarketDataService`. Aucune modification
-des couches calcul et UI. C'est le seul point d'intégration à écrire le jour où
-`blpapi` arrive.
+des couches calcul et UI.
+
+Bloomberg a été retiré (plus d'accès au Terminal) : la chaîne est FMP → Yahoo →
+cache, et les courbes EUR viennent du module Rates & Bond Analytics.
 
 ---
 
@@ -298,7 +274,7 @@ existent, et ils sont nommés « hypothèses », pas « données ».
 | Bêta | réplique à levier 2 ⇒ β = 2,00 ; R² > 0,99 |
 | Scénarios | additivité, monotonie, effet de convexité (gain de baisse > perte de hausse) |
 | Pages | `AppTest` sur les 7 vues **en mode dégradé** (sans réseau ni clé) |
-| Bloomberg | résolution de tickers, normalisation des réponses, calendrier macro, enrichissement des positions, dégradation sans Terminal (23 tests, transport exclu) |
+| Event Radar | construction sur fournisseur factice, avec et sans calendrier macro (régression `UnboundLocalError`) |
 | Import de fichiers réels | nominal vs valorisation, unités de taux par colonne, spreads normalisés, dérivés isolés, coupons < 1 % préservés |
 | Réseau et configuration | détection SSL, session unique du terminal, `verify=False` impossible (et absent des sources), certificat invalide non dégradant, réversibilité du changement de certificat, masquage de clé |
 | Thème | palettes complètes, couleurs de catégories distinctes, signe jamais réutilisé, 12 graphiques construits dans les deux modes |
