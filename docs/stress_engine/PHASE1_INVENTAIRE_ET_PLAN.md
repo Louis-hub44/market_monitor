@@ -3,6 +3,8 @@
 Base analysée : `portfolio-intelligence_V7.zip`, avec ses 157 tests verts sous Python 3.13.
 Ce document précède le code : aucune ligne n'est écrite avant validation.
 
+> **Révision 2 (02/11/2026).** Trois éléments ont été reçus depuis la première version : Rates & Bond Analytics 1.1, Market Monitor 1.6.6 et l'historique des bandeaux. Il n'y a ni portefeuille réel ni série de NAV. Le **§8 remplace** les §2.2, §2.3, §4, la partie « Revalorisation » du §5 et le §7 partout où ils divergent.
+
 ---
 
 ## 1. Inventaire de l'existant en risque
@@ -228,3 +230,92 @@ Le rapport donne la distance, la probabilité implicite (χ²) et les facteurs d
 3. **Les historiques de spreads de crédit** (iTraxx, indices par notation) si vous pouvez les exporter : condition d'un rejeu fiable de 2008, 2011 et 2020.
 4. **La série de NAV ou de P&L quotidien réalisé**, pour le backtesting sur P&L réel en plus du P&L hypothétique.
 5. **L'emplacement du code** : la V7 n'est pas dans ce dépôt, qui contient Market Monitor.
+
+---
+
+## 8. Révision 2 — intégration de Rates & Bond Analytics et de Market Monitor 1.6.6
+
+### 8.1 Inventaire complémentaire
+
+| Brique | Version, tests | Apport au moteur de stress |
+| --- | --- | --- |
+| **Rates & Bond Analytics** (`rates_analytics`) | 1.1.0. 348 tests sur 350 passent ; les 2 échecs sont des tests oracle (§8.6). | **Remplace `bond_math.py` pour la revalorisation complète.** Il apporte les conventions de place (TARGET, ACT/ACT ICMA, échéanciers), `FixedRateBond` (couru, prix clean et dirty), `YieldCurve` / `InterpolatedCurve` / `NelsonSiegelSvenssonCurve`, `SpreadedCurve` (choc zéro par morceaux, validé contre QuantLib à 1e-11) et `CurveSet` €STR / EURIBOR 6M. Les courbes souveraines NSS Bund, OAT et BTP sont construites sur les taux génériques quand les données titre par titre manquent. Il fournit aussi `yas` / `curve_risk` (KRD en tente, Σ KRD = duration effective), `z_spread`, `CurveScenario` (parallèle, twist, steepener, flattener, butterfly, custom, IRRBB, additionnables), `scenario_pnl` (Z-spread calibré puis tenu constant) et une API stable (`api.py`). |
+| Couche de données RBA | `MarketDataService.history(ids, start, end)` sur des ids logiques, avec chaîne de sources, cache parquet et `DataReport` (manquants, périmés, suspects) | **Devient la couche de données des facteurs.** Ids déjà servis : `EUR.GOVT.{DE,FR,IT,ES}.{2Y,5Y,10Y,30Y}` (CNBC → Bundesbank → Stooq), les zéros Svensson Bundesbank `EUR.BBK.DE.ZERO.*`, les paramètres Svensson AAA de la BCE et l'€STR. |
+| Réseau RBA (`network.py`) | Modes `system` (truststore), `ca`, `standard` et `insecure` ; adaptateur HTTPS truststore compatible avec le proxy | **Base de `core/network.py`.** Le mode `insecure` sera supprimé. |
+| **Market Monitor 1.6.6** | 480 tests verts | Clients publics éprouvés derrière un proxy : `StooqClient`, `BundesbankClient`, `FredClient` et `FredApiClient` (serveur de secours avec clé), `CnbcClient`, `StoxxClient`, `MsciClient`. Contrôle croisé Stooq / CNBC à 1,5 pb, futures Brent recollés. **`FredClient` et `FredApiClient` sont portés** dans la couche de données RBA. Market Monitor n'est pas importé par le moteur, pour éviter un couplage entre applications. |
+| `historique_bandeaux.csv` | 378 lignes du 29/09 au 28/10/2026 ; 21 séances pour la plupart des instruments ; OAT-Bund, HY Europe OAS et HY US OAS depuis le 09/10 (14 obs.) ; Italie 10Y seulement jusqu'au 08/10 | Format **long** (`date, instrument, niveau, variation, source`) pris en charge par l'import `file_series`. Il sert au **contrôle croisé** des niveaux récents, Stooq contre saisie, et documente les sources. **Il ne permet pas de calibrer** les fenêtres historiques : un mois d'historique, et aucune donnée de crédit avant octobre 2026. |
+
+### 8.2 Ce que cela change
+
+**Revalorisation complète** (phase 3).
+- **Obligations** : `FixedRateBond` + `SpreadedCurve` de RBA, en remplacement de `bond_math`.
+- **Courbe de référence** : la courbe souveraine du pays de la ligne (Bund, OAT, BTP, Bonos). Pour le crédit, la courbe Bund et un Z-spread calibré sur le prix. Ce choix est cohérent avec les OAS ICE, mesurés contre les souverains.
+- **Chocs de taux** : `CurveScenario` en mode `zero` sur la courbe NSS, c'est-à-dire la convention RBA des courbes souveraines.
+- **Choc de spread** : il s'ajoute au Z-spread.
+- **Approximation delta-gamma** : calculée à partir de `curve_risk` (KRD, convexité effective) et de la spread duration. L'écart entre les deux méthodes est publié.
+
+**Facteurs de taux** (remplace le §2.3).
+- **Facteurs** : `IR.<pays>.<pilier>` pour les pays DE, FR, IT et ES et les piliers 2Y, 5Y, 10Y et 30Y, plus `IR.EUR.ESTR`. Ce sont exactement les séries dont l'historique quotidien gratuit existe.
+- **KRD** : les 10 ténors de RBA (6M … 30Y) sont projetés sur ces piliers par les tentes linéaires de `CurveScenario.custom`. Le choc d'un pilier est donc reproduit à l'identique dans la revalorisation complète.
+- **Spread BTP-Bund** : `IR.IT.10Y − IR.DE.10Y`. Un scénario « BTP-Bund +100 pb » choque les piliers IT à piliers DE constants.
+
+**Futures EUREX.** Les paniers livrables sont tirés de l'univers obligataire RBA par pays et fenêtre de maturité. La V7 et RBA fournissent les prix, et le CTD est retenu sur la base nette. Sans prix de marché, faute d'univers réel en données gratuites, le CTD est approché par une obligation notionnelle comme prévu au §5, avec le signalement correspondant.
+
+### 8.3 Historique des spreads de crédit : stratégie révisée
+
+La limite est confirmée par Market Monitor : FRED ne diffuse que **3 ans** des indices ICE BofA, soit novembre 2023 → aujourd'hui. Seul le choc tarifaire de 2025 est couvert directement. Il n'existe pas de série gratuite d'OAS EUR IG.
+
+| Fenêtre | Source du choc de spread | Confiance |
+| --- | --- | --- |
+| Choc tarifaire 2025 | FRED `BAMLHE00EHYIOAS` (HY EUR) ; IG EUR par ETF (ci-dessous) | élevée (HY), moyenne (IG) |
+| SVB 2023, choc de taux 2022, Covid 2020, zone euro 2011 | **Spread implicite d'ETF crédit EUR** (Yahoo : iShares € Corp IG et € HY), soit le rendement de l'ETF moins le rendement du Bund de même duration, rapporté à la spread duration de l'ETF, déclarée en YAML. Contrôle croisé avec `BAA10Y` (FRED, Moody's, hors licence ICE, historique complet). | moyenne |
+| Lehman 2008 (avant les ETF EUR) | `BAA10Y` (Baa − Treasury 10 ans, FRED, quotidien depuis 1986) × bêta EUR/US estimé sur la période commune | **faible**, signalée dans le rapport |
+| Ventilation par notation et secteur | Ratios de spread duration × niveaux de spread **actuels** par notation, lus dans le portefeuille ou dans un YAML. C'est un choc proportionnel au spread, convention de place. | marquée hypothèse |
+
+La disponibilité réelle de chaque ticker et sa profondeur seront vérifiées en phase 5, avant tout calibrage. Aucune valeur de niveau historique ne sera saisie de mémoire.
+
+### 8.4 Portefeuille de test
+
+Il n'y a pas de portefeuille réel. Je constitue donc un **portefeuille de test crédit EUR**, déclaré fictif dans son nom et ses identifiants, au même titre que les échantillons de RBA (`SMPL-…`). Le fichier `samples/test_credit_eur.csv` est conçu pour reproduire la structure demandée :
+- souverains EUR : Bund, OAT, BTP, Bonos, sur 2 à 30 ans, choisis dans l'univers d'exemple RBA (DE 30, FR 30, IT 49 titres) ;
+- une vingtaine de corporates EUR : AAA → BB, financières et non financières, 2 à 12 ans, avec Z-spreads plausibles par notation ;
+- des futures EUREX en couverture : short Bund et Bobl, Schatz, Buxl, OAT ;
+- deux fonds monétaires, l'un avec composition en look-through, l'autre sans, représenté par un proxy.
+
+Il pourra être remplacé par un vrai fichier sans rien changer au moteur. Le gabarit des colonnes sera documenté.
+
+### 8.5 Backtesting sans série de NAV
+
+Le backtest porte sur le **P&L hypothétique** : portefeuille figé, revalorisé chaque jour sur les mouvements de facteurs réalisés. C'est l'un des deux P&L admis par le dispositif bâlois. Il teste la qualité du modèle de risque, mais pas l'effet du trading. L'entrée « P&L réel » reste prévue (CSV) pour le jour où une série de NAV existera.
+
+### 8.6 Points relevés dans les nouveaux modules
+
+1. **RBA, 2 tests oracle en échec avec QuantLib 1.44.** Les tests `test_yield_and_risk_match_quantlib[street-4]` et `[true-0]` portent sur la convexité : 0,096234 contre 0,096113. La documentation RBA dit l'échéancier aligné sur QuantLib 1.43. Les 348 autres tests passent. Correctif proposé : borner `QuantLib<1.44` dans les dépendances de développement, puis analyser l'écart à part. Le moteur de stress n'utilise pas QuantLib.
+2. **Les trois projets contiennent un mode `verify=False`** : V7 `PI_INSECURE_SSL`, RBA `mode: insecure`, Market Monitor `insecure_ssl` / `--contourner-ssl`. Les trois ont aussi un provider Bloomberg.
+3. **Code réseau en double** : la même logique SSL est écrite trois fois. Le module `core/network.py` unique les remplace dans la V7 et RBA par une fine couche de compatibilité, ce qui garde leurs API et leurs tests.
+
+### 8.7 Architecture révisée (remplace le §2.2)
+
+```
+core/                         paquet partagé `terminal_core`
+  network.py                  session unique : proxy, truststore → CA d'entreprise → certifi ; jamais verify=False
+scripts/check_network.py      sonde ECB, Bundesbank, Stooq, CNBC, FRED, FMP, Yahoo
+rates_bond_analytics/         RBA 1.1 (sans Bloomberg, sans mode insecure, + FRED / Yahoo / fichiers)
+stress_engine/                nouveau paquet, src layout, dépend de rates_analytics et de terminal_core
+  src/stress_engine/          factors · instruments (bond, future, fund, mmf, equity, fx) · mapping ·
+                              revaluation · scenarios · historical · var · garch · decomposition ·
+                              backtest · reverse · limits · report · api.py (contrat stable)
+  config/                     risk_factors.yaml · scenarios/*.yaml · risk_limits.yaml · eurex.yaml
+portfolio-intelligence/       V7 (sans Bloomberg) ; nouvelle page Stress & VaR = UI du moteur
+```
+
+Le moteur est un **paquet autonome** sur le modèle de RBA, et non un sous-dossier de la V7. L'allocation, la CVA et le backtester l'importent comme ils importent `rates_analytics`. Portfolio Intelligence n'en est qu'un consommateur.
+
+### 8.8 Décisions demandées avant la phase 2
+
+1. **Organisation du dépôt.** Ce dépôt contient Market Monitor **1.0.0** à la racine, alors que la version courante est 1.6.6. Proposition :
+   - le dépôt devient le monorepo du terminal (arborescence du §8.7) ;
+   - Market Monitor est mis à jour en 1.6.6 dans un sous-dossier `market_monitor/` ;
+   - chaque projet garde son `pyproject.toml`, ses tests et sa CI.
+2. **Périmètre du retrait de Bloomberg et de `verify=False`** : V7 et RBA d'office. Market Monitor 1.6.6 aussi, ou plus tard dans une tâche distincte ?
+3. **Portefeuille de test fictif** (§8.4) : accord sur la composition.
