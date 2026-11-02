@@ -1,6 +1,6 @@
 """Configuration loading (``config/config.yaml`` + ``.env``).
 
-Secrets (``FMP_API_KEY``, Bloomberg host...) live in ``.env`` or in the process
+Secrets (``FMP_API_KEY``...) live in ``.env`` or in the process
 environment, never in the YAML file or in code. YAML values of the form
 ``${VAR}`` or ``${VAR:-default}`` are substituted from the environment.
 
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
-VALID_PROVIDERS = ("bloomberg", "fmp", "free", "public", "static")
+VALID_PROVIDERS = ("fmp", "free", "public", "static")
 VALID_POLICIES = ("raise", "warn", "drop")
 
 

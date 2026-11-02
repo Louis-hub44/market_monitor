@@ -33,14 +33,12 @@ STATE_KEY = "rba-connection"
 PROVIDERS = {
     "free": "Sources gratuites",
     "fmp": "FMP + gratuites",
-    "bloomberg": "Bloomberg",
     "static": "Données d'exemple",
 }
 PROVIDER_HELP = {
     "free": "ECB Data Portal (€STR, courbe AAA) + CNBC / Bundesbank / Stooq (taux souverains génériques). "
             "Sans cotations de swap publiques, les courbes €STR / EURIBOR sont des proxys signalés comme tels.",
     "fmp": "Financial Modeling Prep (clé FMP_API_KEY dans .env) puis les sources gratuites.",
-    "bloomberg": "Desktop API (terminal ouvert sur ce poste) : source de référence, cotations de swap réelles.",
     "static": "Instantané illustratif hors ligne (data/sample). Aucun appel réseau.",
 }
 MODES = {

@@ -6,10 +6,10 @@ The engine only speaks *logical ids* (``EUR.ESTR.OIS.10Y``, ``EUR.ESTR.FIX``,
     market_data:
       EUR.ESTR.OIS.{tenor}:
         tenors: [1W, 1M, 3M, 6M, 1Y, 2Y, 5Y, 10Y]
-        bloomberg: {ticker: "EESWE{bbg_tenor} Curncy", scale: 0.01}
+        ecb: {key: "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_{ecb_tenor}", scale: 0.01}
 
 Template keys containing ``{tenor}`` expand over ``tenors``. Inside a spec the
-placeholders ``{tenor}``, ``{bbg_tenor}``, ``{ecb_tenor}``, ``{fmp_tenor}``, ``{years}`` (``10``) and
+placeholders ``{tenor}``, ``{ecb_tenor}``, ``{fmp_tenor}``, ``{years}`` (``10``) and
 ``{bbk_tenor}`` (``R10XX``, Bundesbank) are replaced with the provider's own tenor codes. ``scale`` converts the raw value
 to the engine unit (decimal rates: 2.15 % -> 0.0215).
 """
@@ -21,22 +21,6 @@ from typing import Any, Mapping
 
 from rates_analytics.conventions.period import Period, TimeUnit
 from rates_analytics.exceptions import ConfigurationError
-
-_BBG_MONTH_CODES = "ABCDEFGHIJK"  # 1M..11M
-
-
-def bbg_tenor_code(p: Period) -> str:
-    """Bloomberg swap ticker tenor code: ``1M``->``A``, ``6M``->``F``, ``18M``->``1F``, ``10Y``->``10``."""
-    months = p.total_months
-    if months is None:
-        if p.unit is TimeUnit.WEEKS:
-            return f"{p.n}Z"
-        raise ConfigurationError(f"No Bloomberg tenor code for {p}")
-    years, rem = divmod(months, 12)
-    if rem == 0:
-        return str(years)
-    return (str(years) if years else "") + _BBG_MONTH_CODES[rem - 1]
-
 
 def ecb_tenor_code(p: Period) -> str:
     """ECB yield-curve maturity code: ``3M``, ``1Y``, ``1Y6M``, ``30Y``."""
@@ -102,8 +86,6 @@ class MarketDataMap:
         if not isinstance(value, str) or "{" not in value:
             return value
         codes = dict(subs)
-        if "{bbg_tenor}" in value:
-            codes["bbg_tenor"] = bbg_tenor_code(p)
         if "{ecb_tenor}" in value:
             codes["ecb_tenor"] = ecb_tenor_code(p)
         if "{fmp_tenor}" in value:

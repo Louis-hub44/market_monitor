@@ -9,7 +9,7 @@ Market practice for the EUR risk-free curve:
   single coupon below 1Y, payment lag 1 day).
 
 Quotes are logical ids of the market-data layer, so the same template builds
-the curve from Bloomberg, a static snapshot or any other provider.
+the curve from a static snapshot (file) or any other provider.
 """
 
 from __future__ import annotations

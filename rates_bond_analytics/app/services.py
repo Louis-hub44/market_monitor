@@ -63,8 +63,7 @@ class MarketState:
         return CurveEnvironment(self.curves, self.gov_curves)
 
 
-FALLBACKS = {"static": [], "free": ["public", "fmp"], "fmp": ["free", "public"],
-             "bloomberg": ["free", "public"], "public": ["free"]}
+FALLBACKS = {"static": [], "free": ["public", "fmp"], "fmp": ["free", "public"], "public": ["free"]}
 
 
 def load_market_state(as_of: date, provider: str = "static", interpolation: str = "log_linear",

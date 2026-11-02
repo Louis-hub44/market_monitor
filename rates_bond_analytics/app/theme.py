@@ -1,6 +1,6 @@
 """Design tokens of the terminal (shared look with Market Monitor).
 
-Blue-graphite desk screen, Bloomberg amber as the single accent; up / down in teal and
+Blue-graphite desk screen, amber as the single accent; up / down in teal and
 coral rather than pure green / red (readable for the common colour-vision deficiencies).
 """
 

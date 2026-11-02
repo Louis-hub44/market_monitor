@@ -3,7 +3,6 @@
 ``data.provider`` selects the primary source, ``data.fallback`` the ordered
 chain used for missing ids:
 
-* ``bloomberg`` -> :class:`BloombergProvider` (Desktop API, reference source)
 * ``fmp``       -> :class:`FmpProvider` (needs ``FMP_API_KEY``)
 * ``free``      -> :class:`EcbProvider` (ECB Data Portal, no key)
 * ``public``    -> :class:`PublicProvider` (CNBC / Bundesbank / Stooq sovereign yields, no key)
@@ -25,7 +24,6 @@ from rates_analytics.config import PROJECT_ROOT, Settings
 from rates_analytics.data.cache import ParquetCache
 from rates_analytics.data.mapping import MarketDataMap
 from rates_analytics.data.provider import DataProvider
-from rates_analytics.data.providers.bloomberg import BloombergProvider
 from rates_analytics.data.providers.ecb import EcbProvider
 from rates_analytics.data.providers.fmp import FmpProvider
 from rates_analytics.data.providers.public import PublicProvider
@@ -40,11 +38,6 @@ logger = logging.getLogger(__name__)
 def build_provider(name: str, settings: Settings, mapping: MarketDataMap, session: Any | None = None) -> DataProvider:
     """Instantiate one provider by configuration name."""
     lookback = settings.data.quote_lookback_days
-    if name == "bloomberg":
-        o = settings.provider_options("bloomberg")
-        return BloombergProvider(mapping, host=o.get("host", "localhost"), port=int(o.get("port", 8194)),
-                                 timeout_ms=int(o.get("timeout_ms", 30000)),
-                                 default_field=o.get("field", "PX_LAST"), quote_lookback_days=lookback)
     if name == "fmp":
         o = settings.provider_options("fmp")
         key = o.get("api_key") or os.environ.get("FMP_API_KEY", "")

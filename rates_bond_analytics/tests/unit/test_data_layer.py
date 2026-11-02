@@ -1,4 +1,4 @@
-"""Tests of the market-data layer (no network: HTTP and Bloomberg are faked)."""
+"""Tests of the market-data layer (no network: HTTP is faked)."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from rates_analytics.config import load_settings
+from rates_analytics.config import PROJECT_ROOT, load_settings
 from rates_analytics.conventions.period import Period
 from rates_analytics.data import (
-    BloombergProvider,
     EcbProvider,
     FmpProvider,
     MarketDataMap,
@@ -21,7 +20,7 @@ from rates_analytics.data import (
     StaticProvider,
     build_market_data_service,
 )
-from rates_analytics.data.mapping import bbg_tenor_code, ecb_tenor_code, fmp_tenor_code
+from rates_analytics.data.mapping import ecb_tenor_code, fmp_tenor_code
 from rates_analytics.exceptions import (
     ConfigurationError,
     DataProviderError,
@@ -31,10 +30,9 @@ from rates_analytics.exceptions import (
 TODAY = date(2026, 10, 7)
 
 MAPPING_RAW = {
-    "EUR.ESTR.FIX": {"ecb": {"key": "EST/B.EU000A2X2A25.WT", "scale": 0.01},
-                     "bloomberg": {"ticker": "ESTRON Index", "scale": 0.01}},
+    "EUR.ESTR.FIX": {"ecb": {"key": "EST/B.EU000A2X2A25.WT", "scale": 0.01}},
     "EUR.ESTR.OIS.{tenor}": {"tenors": ["6M", "1Y", "18M", "10Y"],
-                             "bloomberg": {"ticker": "EESWE{bbg_tenor} Curncy", "scale": 0.01}},
+                             "public": {"ticker": "file:OIS{ecb_tenor}", "scale": 0.01}},
     "USD.UST.CMT.{tenor}": {"tenors": ["3M", "10Y"],
                             "fmp": {"endpoint": "treasury-rates", "field": "{fmp_tenor}", "scale": 0.01}},
 }
@@ -65,37 +63,8 @@ class FakeSession:
         return self.handler(url, params or {})
 
 
-class FakeBlp:
-    def __init__(self):
-        self.ref_calls, self.hist_calls = [], []
-
-    def reference(self, securities, fields):
-        self.ref_calls.append((list(securities), list(fields)))
-        data = {
-            "EESWE10 Curncy": {"PX_LAST": 2.45},
-            "EESWE1 Curncy": {"PX_LAST": 1.95},
-            "/isin/DE0001102580": {"SECURITY_DES": "DBR 0 02/15/32", "CNTRY_OF_RISK": "DE", "CRNCY": "EUR",
-                                   "CPN": 0.0, "CPN_FREQ": 1, "DAY_CNT_DES": "ACT/ACT",
-                                   "ISSUE_DT": date(2022, 1, 12), "INT_ACC_DT": date(2022, 1, 12),
-                                   "FIRST_CPN_DT": date(2023, 2, 15), "MATURITY": date(2032, 2, 15),
-                                   "PX_BID": 84.10, "PX_ASK": 84.14, "YLD_YTM_MID": 2.61},
-        }
-        return {s: {f: v for f, v in data[s].items() if f in fields} for s in securities if s in data}
-
-    def historical(self, securities, fields, start, end):
-        self.hist_calls.append((list(securities), list(fields), start, end))
-        idx = pd.date_range(start, end, freq="B")
-        return {s: pd.DataFrame(dict.fromkeys(fields, 2.0), index=idx) for s in securities}
-
-    def close(self):
-        pass
-
-
 # ---------------------------------------------------------------- mapping
 def test_tenor_codes():
-    assert bbg_tenor_code(Period.parse("6M")) == "F"
-    assert bbg_tenor_code(Period.parse("18M")) == "1F"
-    assert bbg_tenor_code(Period.parse("10Y")) == "10"
     assert ecb_tenor_code(Period.parse("18M")) == "1Y6M"
     assert ecb_tenor_code(Period.parse("3M")) == "3M"
     assert fmp_tenor_code(Period.parse("3M")) == "month3"
@@ -104,7 +73,7 @@ def test_tenor_codes():
 
 def test_mapping_expansion(mapping):
     assert len(mapping) == 1 + 4 + 2
-    assert mapping.spec("EUR.ESTR.OIS.18M", "bloomberg")["ticker"] == "EESWE1F Curncy"
+    assert mapping.spec("EUR.ESTR.OIS.18M", "public")["ticker"] == "file:OIS1Y6M"
     assert mapping.spec("USD.UST.CMT.10Y", "fmp")["field"] == "year10"
     assert mapping.spec("EUR.ESTR.OIS.1Y", "ecb") is None
     assert mapping.ids("EUR.ESTR.OIS") == ["EUR.ESTR.OIS.10Y", "EUR.ESTR.OIS.18M", "EUR.ESTR.OIS.1Y", "EUR.ESTR.OIS.6M"]
@@ -112,9 +81,9 @@ def test_mapping_expansion(mapping):
 
 def test_mapping_errors():
     with pytest.raises(ConfigurationError):
-        MarketDataMap({"X.{tenor}": {"bloomberg": {"ticker": "A{tenor}"}}})       # no tenors list
+        MarketDataMap({"X.{tenor}": {"public": {"ticker": "A{tenor}"}}})          # no tenors list
     with pytest.raises(ConfigurationError):
-        MarketDataMap({"X.{tenor}": {"tenors": ["1Y"], "bloomberg": {"ticker": "{oops}"}}})
+        MarketDataMap({"X.{tenor}": {"tenors": ["1Y"], "public": {"ticker": "{oops}"}}})
 
 
 # ----------------------------------------------------------------- config
@@ -244,41 +213,6 @@ def test_fmp_masks_api_key_and_requires_it(mapping):
     assert "SECRETKEY" not in str(exc.value)
 
 
-# --------------------------------------------------------------- Bloomberg
-def test_bloomberg_live_quotes_and_history(mapping):
-    blp = FakeBlp()
-    prov = BloombergProvider(mapping, client=blp, today=lambda: TODAY)
-    q = prov.get_quotes(["EUR.ESTR.OIS.10Y", "EUR.ESTR.OIS.1Y", "USD.UST.CMT.10Y"], TODAY)
-    assert q.loc["EUR.ESTR.OIS.10Y", "value"] == pytest.approx(0.0245)
-    assert "USD.UST.CMT.10Y" not in q.index
-    hist = prov.get_history(["EUR.ESTR.OIS.10Y"], date(2026, 9, 28), date(2026, 10, 2))
-    assert len(hist) == 5 and hist.iloc[0, 0] == pytest.approx(0.02)
-    past = prov.get_quotes(["EUR.ESTR.OIS.10Y"], date(2026, 10, 2))      # history-based
-    assert past.loc["EUR.ESTR.OIS.10Y", "obs_date"] == date(2026, 10, 2)
-
-
-def test_bloomberg_bond_static_and_prices(mapping):
-    prov = BloombergProvider(mapping, client=FakeBlp(), today=lambda: TODAY)
-    st = prov.get_bond_static(["DE0001102580", "XX0000000000"])
-    assert list(st.index) == ["DE0001102580"]
-    assert st.loc["DE0001102580", "maturity"] == date(2032, 2, 15)
-    assert st.loc["DE0001102580", "frequency"] == 1
-    px = prov.get_bond_prices(["DE0001102580"], TODAY)
-    assert px.loc["DE0001102580", "mid"] == pytest.approx(84.12)
-    assert px.loc["DE0001102580", "yield_mid"] == pytest.approx(0.0261)
-
-
-def test_bloomberg_without_blpapi_raises_configuration_error(mapping):
-    prov = BloombergProvider(mapping)
-    try:
-        import blpapi  # noqa: F401
-        pytest.skip("blpapi installed")
-    except ImportError:
-        with pytest.raises(ConfigurationError):
-            prov.get_quotes(["EUR.ESTR.OIS.10Y"], date.today())
-
-
-# ----------------------------------------------------------------- service
 def _static(values: dict[str, list[float]], dates=("2026-10-01", "2026-10-02")) -> StaticProvider:
     return StaticProvider(pd.DataFrame(values, index=pd.to_datetime(list(dates))))
 
@@ -344,16 +278,28 @@ def test_service_provider_failure_falls_back(mapping, monkeypatch):
     assert svc.last_report.served_by["EUR.ESTR.FIX"] == "static" and svc.last_report.ok
 
 
-def test_service_bond_static_and_prices_via_cache(tmp_path, mapping):
-    blp = FakeBlp()
-    svc = MarketDataService([BloombergProvider(mapping, client=blp, today=lambda: TODAY)],
-                            cache=ParquetCache(tmp_path), today=lambda: TODAY)
-    s1 = svc.bond_static(["DE0001102580"])
-    s2 = svc.bond_static(["DE0001102580"])
-    assert len(blp.ref_calls) == 1
-    assert s2.loc["DE0001102580", "maturity"] == s1.loc["DE0001102580", "maturity"] == date(2032, 2, 15)
-    px = svc.bond_prices(["DE0001102580"], TODAY)
-    assert px.loc["DE0001102580", "mid"] == pytest.approx(84.12)
+class CountingStatic(StaticProvider):
+    """Static provider that counts reference-data calls (cache test)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.static_calls = 0
+
+    def get_bond_static(self, isins):
+        self.static_calls += 1
+        return super().get_bond_static(isins)
+
+
+def test_service_bond_static_and_prices_via_cache(tmp_path):
+    isin = "SMPL-DE-20270215"
+    prov = CountingStatic.from_directory(PROJECT_ROOT / "data" / "sample")
+    svc = MarketDataService([prov], cache=ParquetCache(tmp_path), today=lambda: TODAY)
+    s1 = svc.bond_static([isin])
+    s2 = svc.bond_static([isin])
+    assert prov.static_calls == 1
+    assert s2.loc[isin, "maturity"] == s1.loc[isin, "maturity"] == date(2027, 2, 15)
+    px = svc.bond_prices([isin], date(2026, 10, 6))
+    assert 90 < px.loc[isin, "mid"] < 110
 
 
 def test_service_validates_inputs():

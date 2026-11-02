@@ -18,7 +18,7 @@ network:
   timeout_s: 20
 
 data:
-  provider: free            # bloomberg | fmp | free (ECB Data Portal) | public (CNBC/Bundesbank/Stooq) | static
+  provider: free            # fmp | free (ECB Data Portal) | public (CNBC/Bundesbank/Stooq) | static
   fallback: [public, fmp]   # ordered chain used for ids the primary cannot serve (FMP skipped without key)
   missing_policy: warn      # raise | warn (NaN + log) | drop
   quote_lookback_days: 10   # calendar days searched backwards for the last valid quote
@@ -30,11 +30,6 @@ data:
     ttl_days_static: 30     # bond reference data
 
 providers:
-  bloomberg:
-    host: ${BLP_HOST:-localhost}
-    port: ${BLP_PORT:-8194}
-    timeout_ms: 30000
-    field: PX_LAST
   fmp:
     base_url: https://financialmodelingprep.com/stable
     timeout_s: 20
@@ -48,7 +43,7 @@ providers:
     directory: data/sample
 
 # Free sources publish no EUR swap quotes. When the €STR OIS / EURIBOR 6M quotes are missing
-# (no Bloomberg), the curves are rebuilt as PROXIES from public data, clearly flagged in the UI:
+# (no swap quote source), the curves are rebuilt as PROXIES from public data, clearly flagged in the UI:
 #   €STR OIS zero(T) = ECB AAA Svensson zero(T) + spread(T), the spread going from the €STR
 #   fixing at the short end to `ois_minus_aaa_bp` (interpolated in maturity) at the long end;
 #   EURIBOR 6M swap(T) = OIS par(T) + `euribor6m_basis_bp`(T); 6M fixing = €STR + basis(6M).
@@ -61,39 +56,35 @@ proxy_curves:
   euribor6m_basis_bp: {6M: 20, 1Y: 19, 2Y: 17, 5Y: 13, 10Y: 10, 20Y: 7, 30Y: 6, 50Y: 5}
 
 # Logical id -> provider specs. Rates are returned in decimals (scale 0.01 for % quotes).
-# Bloomberg tickers follow the usual BGN conventions – check them with SECF / FLDS on your terminal.
+# Ids without a live source (EUR OIS / IRS / FRA quotes) are served by the static provider
+# (CSV files, e.g. an export from your desk) or rebuilt as proxies (proxy_curves above).
 market_data:
   EUR.ESTR.FIX:
     description: "€STR fixing (volume-weighted trimmed mean), published T+1 08:00 CET"
     ecb: {key: "EST/B.EU000A2X2A25.WT", scale: 0.01}
-    bloomberg: {ticker: "ESTRON Index", scale: 0.01}
 
   EUR.ESTR.OIS.{tenor}:
     description: "€STR OIS par rate (annual ACT/360, T+2, pay lag 1)"
     tenors: [1W, 2W, 1M, 2M, 3M, 4M, 5M, 6M, 9M, 1Y, 18M, 2Y, 3Y, 4Y, 5Y, 6Y, 7Y, 8Y, 9Y, 10Y, 12Y, 15Y, 20Y, 25Y, 30Y, 40Y, 50Y]
-    bloomberg: {ticker: "EESWE{bbg_tenor} Curncy", scale: 0.01}
 
   EUR.EURIBOR6M.FIX:
     description: "EURIBOR 6M fixing"
-    bloomberg: {ticker: "EUR006M Index", scale: 0.01}
   EUR.EURIBOR3M.FIX:
     description: "EURIBOR 3M fixing"
-    bloomberg: {ticker: "EUR003M Index", scale: 0.01}
 
-  # FRAs on EURIBOR 6M (Bloomberg EUFR tickers: check with SECF before use)
-  EUR.EURIBOR6M.FRA.1X7: {bloomberg: {ticker: "EUFR0AG Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.2X8: {bloomberg: {ticker: "EUFR0BH Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.3X9: {bloomberg: {ticker: "EUFR0CI Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.4X10: {bloomberg: {ticker: "EUFR0DJ Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.5X11: {bloomberg: {ticker: "EUFR0EK Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.6X12: {bloomberg: {ticker: "EUFR0F1 Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.9X15: {bloomberg: {ticker: "EUFR0I1C Curncy", scale: 0.01}}
-  EUR.EURIBOR6M.FRA.12X18: {bloomberg: {ticker: "EUFR011F Curncy", scale: 0.01}}
+  # FRAs on EURIBOR 6M
+  EUR.EURIBOR6M.FRA.1X7: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.2X8: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.3X9: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.4X10: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.5X11: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.6X12: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.9X15: {description: "EURIBOR 6M FRA (file / static source)"}
+  EUR.EURIBOR6M.FRA.12X18: {description: "EURIBOR 6M FRA (file / static source)"}
 
   EUR.EURIBOR6M.SWAP.{tenor}:
     description: "EUR IRS vs EURIBOR 6M (fixed annual 30/360)"
     tenors: [2Y, 3Y, 4Y, 5Y, 6Y, 7Y, 8Y, 9Y, 10Y, 12Y, 15Y, 20Y, 25Y, 30Y, 40Y, 50Y]
-    bloomberg: {ticker: "EUSA{bbg_tenor} Curncy", scale: 0.01}
 
   EUR.ECB.AAA.SPOT.{tenor}:
     description: "ECB euro-area AAA government spot curve (Svensson fit by the ECB)"
@@ -119,22 +110,18 @@ market_data:
     description: "Bund generic yield (CNBC, then Bundesbank Svensson zero curve, then Stooq)"
     tenors: [2Y, 5Y, 10Y, 30Y]
     public: {ticker: "cnbc:DE{tenor}-DE|bbk:BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.{bbk_tenor}.R.A.A._Z._Z.A|stooq:{years}dey.b", scale: 0.01}
-    bloomberg: {ticker: "GDBR{years} Index", scale: 0.01}
   EUR.GOVT.FR.{tenor}:
     description: "OAT generic yield"
     tenors: [2Y, 5Y, 10Y, 30Y]
     public: {ticker: "cnbc:FR{tenor}-FR|stooq:{years}fry.b", scale: 0.01}
-    bloomberg: {ticker: "GFRN{years} Index", scale: 0.01}
   EUR.GOVT.IT.{tenor}:
     description: "BTP generic yield"
     tenors: [2Y, 5Y, 10Y, 30Y]
     public: {ticker: "cnbc:IT{tenor}-IT|stooq:{years}ity.b", scale: 0.01}
-    bloomberg: {ticker: "GBTPGR{years} Index", scale: 0.01}
   EUR.GOVT.ES.{tenor}:
     description: "Bonos generic yield"
     tenors: [2Y, 5Y, 10Y, 30Y]
     public: {ticker: "cnbc:ES{tenor}-ES|stooq:{years}esy.b", scale: 0.01}
-    bloomberg: {ticker: "GSPG{years}YR Index", scale: 0.01}
   # Bundesbank official zero-coupon curve of Federal securities (Svensson), extra Bund pillars
   EUR.BBK.DE.ZERO.{tenor}:
     description: "Bundesbank Svensson zero-coupon yield of listed Federal securities"
@@ -147,7 +134,7 @@ market_data:
     fmp: {endpoint: "treasury-rates", field: "{fmp_tenor}", scale: 0.01}
 
 # Sovereign curves (phase 4). For each curve: issuer (convention) and the bond universe:
-#   isins: explicit list (production / Bloomberg), or
+#   isins: explicit list (production), or
 #   file:  CSV with an "isin" column (relative to the project root), or
 #   nothing: every bond of that issuer known to the static provider (sample data).
 sovereign_curves:

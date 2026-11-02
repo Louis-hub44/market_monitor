@@ -1,7 +1,7 @@
 r"""Proxy curves built from free public data, for when no EUR swap quote is available.
 
 Free sources (ECB, CNBC, Bundesbank…) publish **no** €STR OIS or EURIBOR swap quotes:
-without Bloomberg the swap curves cannot be bootstrapped from the market. This module
+without a swap quote source the curves cannot be bootstrapped from the market. This module
 rebuilds the *missing quotes* from what is public, then the normal bootstrap runs on
 them, so every downstream module (SWPM, spreads, scenarios…) works unchanged. The
 result is a **proxy**, flagged as such in :class:`ProxyReport` and in the UI.

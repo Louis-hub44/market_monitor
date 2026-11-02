@@ -118,7 +118,8 @@ if state.proxy.used:
         "pas de cotations OIS / IRS en euro : la courbe €STR est la courbe AAA de la BCE (Svensson) recalée sur "
         f"le fixing €STR ({state.proxy.estr_fixing:.3%}) avec un spread OIS−AAA, la courbe EURIBOR 6M ajoute "
         "la basis de <code>config.yaml</code> (<code>proxy_curves</code>). Ordres de grandeur fiables, pas des "
-        "niveaux de trading : Bloomberg donne les cotations réelles.</div>", unsafe_allow_html=True)
+        "niveaux de trading : importez des cotations de swap réelles (fichier, provider <code>static</code>) "
+        "pour les remplacer.</div>", unsafe_allow_html=True)
 if "benchmarks" in gov_src:
     st.caption("Courbes souveraines ajustées sur les taux génériques 2/5/10/30 ans (CNBC → Bundesbank → Stooq), "
                "faute de données obligataires titre par titre : rich/cheap non significatif.")

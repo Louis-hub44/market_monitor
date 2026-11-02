@@ -1,8 +1,8 @@
 # Rates & Bond Analytics
 
-Module « courbes de taux & analytics obligataires » du mini terminal Bloomberg maison, inspiré de **GC** (courbes), **SWPM** (pricer de swaps) et **YAS** (analytics obligataires). Les objets produits ici (conventions, échéanciers, puis courbes) sont réutilisés par le Pricing Lab, le CVA Calculator et Portfolio Intelligence.
+Module « courbes de taux & analytics obligataires » du mini terminal de marché maison, inspiré de **GC** (courbes), **SWPM** (pricer de swaps) et **YAS** (analytics obligataires). Les objets produits ici (conventions, échéanciers, puis courbes) sont réutilisés par le Pricing Lab, le CVA Calculator et Portfolio Intelligence.
 
-> **Statut : version 1.1.0, phases 1 à 10 terminées.** Le module couvre l'architecture, les conventions et la couche de données ; les courbes €STR et EURIBOR 6M en dual curve et les courbes souveraines NSS ; les analytics YAS et les spreads G / I / Z / ASW ; le pricer SWPM avec risque bucketé ; les scénarios de courbe ; le dashboard Streamlit ; une API d'intégration stable. Il compte 350 tests, est propre sous ruff et mypy, avec une CI sous Windows et Linux.
+> **Statut : version 1.1.0, phases 1 à 10 terminées.** Le module couvre l'architecture, les conventions et la couche de données ; les courbes €STR et EURIBOR 6M en dual curve et les courbes souveraines NSS ; les analytics YAS et les spreads G / I / Z / ASW ; le pricer SWPM avec risque bucketé ; les scénarios de courbe ; le dashboard Streamlit ; une API d'intégration stable. Il compte 344 tests, est propre sous ruff et mypy, avec une CI sous Windows et Linux.
 
 ---
 
@@ -11,10 +11,10 @@ Module « courbes de taux & analytics obligataires » du mini terminal Bloomberg
 ```
 rates_bond_analytics/
 ├── config/config.yaml          # provider, cache, mapping id logique -> tickers (aucun secret)
-├── .env.example                # FMP_API_KEY, BLP_HOST... (copier en .env)
+├── .env.example                # FMP_API_KEY, réseau (copier en .env)
 ├── src/rates_analytics/        # MOTEUR – n'importe jamais Streamlit ni QuantLib
 │   ├── conventions/            # day counts, calendriers, BDC, tenors, échéanciers, conventions EUR
-│   ├── data/                   # DataProvider abstrait + Bloomberg / FMP / ECB / Static, cache parquet
+│   ├── data/                   # DataProvider abstrait + FMP / ECB / Public / Static, cache parquet
 │   ├── curves/                 # YieldCurve, interpolations, bootstrap, €STR, EURIBOR, CurveSet, NSS, courbes proxy
 │   ├── bonds/                  # obligation à taux fixe, analytics YAS (durations, KRD), spreads G/I/Z/ASW
 │   ├── instruments/            # jambes de swap, OIS, swap vanille dual curve, fixings
@@ -51,10 +51,10 @@ Principes :
             ┌──────────────────────── MarketDataService ────────────────────────┐
  moteur ──► │ chaîne de providers ─► cache parquet ─► politique données manquantes│
             └─────┬──────────────┬───────────────┬───────────────┬───────────────┘
-           BloombergProvider  FmpProvider    EcbProvider     PublicProvider          StaticProvider
-           (blpapi, référence) (UST)         (€STR, courbe    (CNBC → Bundesbank      (CSV / tests)
-                                              AAA BCE)         → Stooq : taux EGB)
-                         └──── une session HTTP partagée, politique SSL de network.py ────┘
+           FmpProvider        EcbProvider     PublicProvider          StaticProvider
+           (UST)              (€STR, courbe   (CNBC → Bundesbank      (fichiers CSV :
+                              AAA BCE)        → Stooq : taux EGB)     swaps, titres)
+                 └──── session HTTP unique du terminal (terminal_core) ────┘
 ```
 
 | Méthode | Retour |
@@ -64,11 +64,11 @@ Principes :
 | `bond_static(isins)` | coupon, fréquence, day count, dates d'émission / 1er coupon / maturité |
 | `bond_prices(isins, as_of)` | bid, ask, mid (clean, % pair), `yield_mid` |
 
-* **Choix du provider** : `data.provider` (`bloomberg` | `fmp` | `free` | `public` | `static`) ; `data.fallback` liste les sources tentées pour les ids manquants.
+* **Choix du provider** : `data.provider` (`fmp` | `free` | `public` | `static`) ; `data.fallback` liste les sources tentées pour les ids manquants.
 * **Données manquantes** : `missing_policy` = `raise` (`MissingDataError`), `warn` (NaN + log) ou `drop`. Le `DataReport` du dernier appel (`svc.last_report`) indique quelle source a servi chaque id, les ids manquants, **périmés** (> 5 jours) ou **suspects** (hors `plausible_rate_range`).
 * **Cache parquet** (`data/cache/<provider>/...`) : une fenêtre historique close est immuable ; une fenêtre incluant aujourd'hui expire après `ttl_hours_live` ; les données statiques obligataires après `ttl_days_static`.
 * **Secrets** : `FMP_API_KEY` uniquement dans `.env` ; la clé est masquée dans tous les messages d'erreur.
-* **Bloomberg** : `blpapi` est importé paresseusement, et la connexion n'est ouverte qu'au premier appel. Le provider passe par une interface `BlpClient` (`reference` / `historical`), testée avec un faux client. Le vrai `BlpapiClient` est testé de bout en bout contre un faux module `blpapi` : requêtes, réponses partielles, erreurs de titre, timeout, session refusée.
+* **Sans Bloomberg** : le provider Bloomberg a été retiré (plus d'accès au Terminal). Les cotations sans source gratuite (OIS €STR, IRS et FRA EURIBOR) viennent d'un fichier (provider `static`, par exemple un export du desk) ou sont reconstruites en proxy (§ 11.3).
 
 ---
 
@@ -80,14 +80,12 @@ python -m venv .venv
 pip install -e ../core               # session réseau partagée du terminal (monorepo)
 pip install -e .[dev]                 # moteur + pytest, QuantLib < 1.44 (oracle de test), ruff, mypy
 copy .env.example .env                # puis renseigner FMP_API_KEY
-# Bloomberg (optionnel, terminal ouvert sur le poste) :
-pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
 ```
 
 Dans PyCharm : marquer `src/` comme *Sources Root*, interpréteur = `.venv`, configuration pytest sur `tests/`.
 
 ```bash
-pytest                    # 350 tests (unitaires + oracle QuantLib + UI), sans réseau
+pytest                    # 344 tests (unitaires + oracle QuantLib + UI), sans réseau
 pytest --cov              # + couverture (93 %)
 ruff check . && mypy      # lint + typage
 pytest -m network         # appels réels (diagnostic réseau, ECB, CNBC/Bundesbank, FMP, instantané gratuit) depuis votre poste
@@ -252,7 +250,7 @@ Sur la courbe complète :
 
 Un OIS payeur 7Y à 2,40 % sur 10 M€ a un taux par de 2,39200 %, une NPV de −5 194 € et une DV01 d'environ 6 492 €/bp. Les deux interpolations donnent le même résultat à 0,01 € près, puisque les deux courbes repricent exactement les mêmes instruments.
 
-> Les cotations de `data/sample/history.csv` sont **illustratives** (niveaux plausibles, pas des données de marché). Les cotations EURIBOR sont générées à partir de la courbe €STR et d'un spread de basis lisse, pour rester cohérentes entre elles. En production, utilise `provider: bloomberg` (tickers `EESWE…`, `EUSA…`, `EUFR…`, à vérifier avec SECF).
+> Les cotations de `data/sample/history.csv` sont **illustratives** (niveaux plausibles, pas des données de marché). Les cotations EURIBOR sont générées à partir de la courbe €STR et d'un spread de basis lisse, pour rester cohérentes entre elles. En production, fournis de vraies cotations de swap par fichier (provider `static`), sinon les courbes proxy (§ 11.3) prennent le relais.
 
 ## 5. Courbe EURIBOR 6M en dual curve (phase 3)
 
@@ -387,7 +385,7 @@ Le spread zéro face au Bund à 10 ans vaut **+71,6 bp pour l'OAT** et **+94,0 b
 - coupon couru : $AI = 2{,}6 \times \frac{235}{365} = 1{,}673973$ ;
 - sur la courbe Bund fittée : prix *dirty* $= \sum_k CF_k P(t_k)/P(t_s) = 100{,}9499$, prix *clean* $= 99{,}2759$, rendement ICMA $= 2{,}6876\,\%$.
 
-> L'univers `SMPL-…` est **synthétique**, généré par `scripts/generate_sample_bonds.py`. Ce ne sont pas de vrais ISIN, et les prix sont produits par une vraie courbe NSS, des spreads lisses et du bruit. En production, renseigne les ISIN de chaque émetteur et utilise `provider: bloomberg`.
+> L'univers `SMPL-…` est **synthétique**, généré par `scripts/generate_sample_bonds.py`. Ce ne sont pas de vrais ISIN, et les prix sont produits par une vraie courbe NSS, des spreads lisses et du bruit. En production, renseigne les ISIN de chaque émetteur et fournis leurs données (référentiel, prix) par fichier, ou laisse les courbes s'ajuster sur les taux génériques (§ 11.3).
 
 ## 7. Analytics obligataires type YAS (phase 5)
 
@@ -688,11 +686,11 @@ Un pare-feu qui **bloque** un site (page de blocage, tunnel refusé) ne se règl
 | `EUR.BBK.DE.ZERO.{1Y…30Y}` | Bundesbank, courbe zéro-coupon Svensson officielle des titres fédéraux | piliers supplémentaires du Bund |
 | `EUR.ESTR.FIX`, `EUR.ECB.AAA.NSS.*` | ECB Data Portal | €STR, paramètres Svensson AAA de la BCE |
 
-Les mêmes ids ont aussi un ticker Bloomberg (`GDBR10 Index`…). Les sources sont chaînées (`cnbc:…|bbk:…|stooq:…`). Une source entièrement indisponible (page anti-robot, hôte filtré) est ignorée pour le reste de la requête, au lieu d'épuiser un délai par id.
+Les sources sont chaînées (`cnbc:…|bbk:…|stooq:…`). Une source entièrement indisponible (page anti-robot, hôte filtré) est ignorée pour le reste de la requête, au lieu d'épuiser un délai par id.
 
 ### 11.3 Courbes proxy quand il n'y a pas de cotations de swap
 
-Aucune source gratuite ne publie de cotations OIS €STR ou de swaps EURIBOR. Sans Bloomberg, les courbes de swap ne peuvent donc pas être bootstrappées sur le marché. Au lieu d'échouer, `curves/proxy.py` **reconstruit les cotations manquantes**, puis le bootstrap normal tourne dessus. Tous les écrans (SWPM, spreads, scénarios) fonctionnent alors sans changement :
+Aucune source gratuite ne publie de cotations OIS €STR ou de swaps EURIBOR. Sans fichier de cotations, les courbes de swap ne peuvent donc pas être bootstrappées sur le marché. Au lieu d'échouer, `curves/proxy.py` **reconstruit les cotations manquantes**, puis le bootstrap normal tourne dessus. Tous les écrans (SWPM, spreads, scénarios) fonctionnent alors sans changement :
 
 $$z_{OIS}(t) = z_{AAA}(t) + s_\infty(t) + \big(z_{€STR} - z_{AAA}(0) - s_\infty(0)\big)\,e^{-t/h}, \qquad z_{6M}(t) = z_{OIS}(t) + b(t)$$
 
@@ -766,7 +764,7 @@ Le transport par JSON permet aussi de calculer les courbes une seule fois (par e
 
 | Outil | Commande | État |
 |---|---|---|
-| Tests | `pytest` | 350 tests, sans réseau, environ 1 min 45 |
+| Tests | `pytest` | 344 tests, sans réseau, environ 1 min 45 |
 | Couverture | `pytest --cov` | 93 % (moteur + services UI) |
 | Lint / imports | `ruff check .` | 0 alerte (règles E, F, W, I, UP, B, RUF, C4) |
 | Typage | `mypy` | 0 erreur sur `src/rates_analytics` |
@@ -816,7 +814,6 @@ Ces invariants ont révélé un bug, corrigé depuis. Pour un IRS dont le premie
 | `tests/unit/test_api_and_invariants.py` | API d'intégration (export, aller-retour JSON bit à bit, table obligataire, risque swap), invariants transverses, non-régression fixing du jour |
 | `tests/unit/test_network_ssl.py` | modes SSL (session par mode, magasin Windows via `truststore`, priorité des variables d'environnement), classement des erreurs (certificat, page de blocage du proxy, délai), cause dominante |
 | `tests/unit/test_public_sources_and_proxy.py` | parseurs CNBC / SDMX / Stooq, chaîne de sources et coupe-circuit, courbes proxy (court terme sur l'€STR, basis retrouvée au bootstrap), instantané « mode gratuit » complet sans cotation de swap |
-| `tests/unit/test_blpapi_client.py` | client Bloomberg réel contre un faux `blpapi` (réponses partielles, erreurs, timeout) |
 | `tests/unit/test_curves.py` | repricing < $10^{-8}$ bp, reconstruction exacte d'une courbe plate, localité du log-linéaire, continuité et intégrale du monotone convexe (4 régions), positivité |
 
 Tolérances : fractions d'année $10^{-13}$ ; DF de courbe $10^{-11}$ ; forwards 1 jour $10^{-5}$ bp ; taux par OIS et IRS $10^{-11}$ ; forwards EURIBOR projetés $10^{-12}$ ; couru et prix $10^{-9}$ ; rendements $10^{-11}$.

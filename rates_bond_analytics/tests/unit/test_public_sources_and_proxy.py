@@ -52,13 +52,12 @@ def test_parsers():
         parse_stooq_csv("<html><script>challenge</script></html>")
 
 
-def test_mapping_placeholders_for_public_and_bloomberg():
+def test_mapping_placeholders_for_public_sources():
     m = MarketDataMap({"EUR.GOVT.DE.{tenor}": {
         "tenors": ["2Y", "30Y"],
-        "public": {"ticker": "cnbc:DE{tenor}-DE|bbk:BBSIS/A.{bbk_tenor}|stooq:{years}dey.b"},
-        "bloomberg": {"ticker": "GDBR{years} Index"}}})
+        "public": {"ticker": "cnbc:DE{tenor}-DE|bbk:BBSIS/A.{bbk_tenor}|stooq:{years}dey.b"}}})
     assert m.spec("EUR.GOVT.DE.2Y", "public")["ticker"] == "cnbc:DE2Y-DE|bbk:BBSIS/A.R02XX|stooq:2dey.b"
-    assert m.spec("EUR.GOVT.DE.30Y", "bloomberg")["ticker"] == "GDBR30 Index"
+    assert m.spec("EUR.GOVT.DE.30Y", "public")["ticker"].endswith("stooq:30dey.b")
     project = MarketDataMap(load_settings().market_data)
     assert project.spec("EUR.GOVT.IT.10Y", "public")["ticker"].startswith("cnbc:IT10Y-IT")
 
